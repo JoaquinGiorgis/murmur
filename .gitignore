@@ -1,0 +1,7 @@
+datos/
+salida/
+.murmur/
+__pycache__/
+*.pyc
+.venv/
+.env
