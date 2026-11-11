@@ -31,6 +31,7 @@ ARISTA_MIN = 3
 RESOLUCION = 1.0
 TASA_RESP_RUIDO = 0.02
 SIM_ASIGNAR = 0.80
+SIM_COORD = 0.55
 RUIDO_REPETIDO = 20
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
@@ -176,6 +177,30 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         if not corto[i] and F[i] >= 0 and narr[F[i]] == cn[p] and lado[F[i]] != 0:
             cs[i] = lado[F[i]]
 
+    # lo que empuja una operación coordinada no es ruido aunque sea una plantilla que nadie responde:
+    # se asigna a la narrativa y al lado más cercanos por significado
+    if grupos is not None:
+        coord_c = set(grupos.cuenta_id[grupos.grupo != ""])
+        es_coord = c.cuenta_id.isin(coord_c).values
+        asign = (cn >= 0) & ~isrep
+        claves_ns = sorted(set(zip(cn[asign], cs[asign])))
+        if claves_ns:
+            C = np.zeros((len(claves_ns), E.shape[1]), np.float32)
+            pos = {k: j for j, k in enumerate(claves_ns)}
+            j_of = np.array([pos[(n, s)] for n, s in zip(cn[asign], cs[asign])])
+            np.add.at(C, j_of, E[kid[asign]])
+            C /= np.linalg.norm(C, axis=1, keepdims=True) + 1e-9
+            ii = np.nonzero(es_coord & (cn < 0) & ~isrep & (nw >= MIN_PALABRAS))[0]
+            if len(ii):
+                S = E[kid[ii]] @ C.T
+                b = S.argmax(1); ok = S.max(1) >= SIM_COORD
+                for i, jj in zip(ii[ok], b[ok]):
+                    cn[i], cs[i] = claves_ns[jj]
+                # sus respuestas cortas heredan
+                for i in np.argsort(c.ts.values, kind="stable"):
+                    if isrep[i] and cn[i] < 0 and cn[pi[i]] >= 0:
+                        cn[i] = cn[pi[i]]; cs[i] = cs[pi[i]] if corto[i] else -cs[pi[i]]
+
     # renumerar narrativas por tamaño
     vals, cnts = np.unique(cn[cn >= 0], return_counts=True)
     orden = vals[np.argsort(-cnts)]
@@ -183,7 +208,8 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     cn = np.array([ren.get(v, -1) for v in cn])
 
     df = pd.DataFrame({"comentario_id": c.comentario_id.values, "n": cn, "s": cs, "ts": c.ts.values,
-                       "texto": c.texto.values, "cuenta_id": c.cuenta_id.values, "rep": isrep, "kid": kid})
+                       "texto": c.texto.values, "cuenta_id": c.cuenta_id.values, "rep": isrep, "kid": kid,
+                       "respuesta_a": c.respuesta_a.values})
     coord = set()
     if grupos is not None:
         coord = set(grupos.cuenta_id[grupos.grupo != ""])

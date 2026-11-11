@@ -1,0 +1,270 @@
+<title>murmur</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: franja de resumen, luego "qué circula" como filas espejadas (apoya arriba, rechaza abajo)
+   sobre un eje de tiempo compartido, y "quién lo empuja" como fichas de operación. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #12151c; --muted: #5b6270; --faint: #8a91a0;
+  --line: #e2e5eb; --grid: #eef0f3;
+  --apoya: #2a78d6; --apoya-fill: rgba(42,120,214,.26);
+  --rechaza: #eb6834; --rechaza-fill: rgba(235,104,52,.26);
+  --op: #6250d6; --op-soft: rgba(98,80,214,.10);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111318; --panel: #181b22; --ink: #eef0f4; --muted: #a3a9b6; --faint: #7d8492;
+  --line: #2a2f39; --grid: #20242c;
+  --apoya: #3987e5; --apoya-fill: rgba(57,135,229,.30);
+  --rechaza: #d95926; --rechaza-fill: rgba(217,89,38,.32);
+  --op: #9085e9; --op-soft: rgba(144,133,233,.14); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111318; --panel: #181b22; --ink: #eef0f4; --muted: #a3a9b6; --faint: #7d8492;
+  --line: #2a2f39; --grid: #20242c;
+  --apoya: #3987e5; --apoya-fill: rgba(57,135,229,.30);
+  --rechaza: #d95926; --rechaza-fill: rgba(217,89,38,.32);
+  --op: #9085e9; --op-soft: rgba(144,133,233,.14); color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 36px; }
+h1, h2 { font-family: var(--f-display); font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h1 { font-size: 2.1rem; line-height: 1.05; }
+h2 { font-size: 1.35rem; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.eyebrow { font: 500 .72rem/1 var(--f-data); text-transform: uppercase; letter-spacing: .09em; color: var(--faint); }
+.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+
+/* resumen */
+.top { display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: flex-end; justify-content: space-between; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.fact { display: grid; gap: 4px; }
+.fact b { font: 500 1.35rem/1 var(--f-data); font-variant-numeric: tabular-nums; }
+
+/* qué circula */
+.sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
+.sw.a { background: var(--apoya); } .sw.r { background: var(--rechaza); }
+.sw.o { width: 2px; height: 14px; background: var(--ink); border-radius: 0; }
+.board { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.row { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 0 22px; padding: 14px 18px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.axisrow { padding-block: 10px 6px; background: var(--panel); }
+.info { min-width: 0; display: grid; gap: 5px; align-content: start; }
+.title { font-weight: 600; line-height: 1.3; }
+.sub { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .8rem; color: var(--muted); align-items: center; }
+.split { display: flex; height: 4px; border-radius: 2px; overflow: hidden; width: 120px; gap: 2px; }
+.split i { display: block; height: 100%; }
+.split .a { background: var(--apoya); } .split .r { background: var(--rechaza); }
+.chip { font: 500 .7rem/1 var(--f-data); letter-spacing: .04em; padding: 4px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.em { color: var(--ink); border-color: var(--faint); }
+.chip.op { color: var(--op); border-color: var(--op); background: var(--op-soft); }
+.keys { font: .76rem/1.4 var(--f-data); color: var(--faint); }
+.chart { position: relative; min-width: 0; height: 72px; cursor: crosshair; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart .cross { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--muted); pointer-events: none; }
+.axis { position: relative; height: 18px; font: .7rem/1 var(--f-data); color: var(--faint); }
+.axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font-size: .8rem; box-shadow: 0 6px 24px rgba(0,0,0,.14); min-width: 170px; }
+.tip .l { display: flex; justify-content: space-between; gap: 14px; align-items: center; }
+.tip .l span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+
+/* quién lo empuja */
+.ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.opcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; align-content: start; }
+.ophead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.opname { font: 700 1.25rem/1 var(--f-display); color: var(--op); }
+.opfoco { font-size: .92rem; }
+.opfoco em { font-style: normal; font-weight: 600; }
+.hours { display: grid; gap: 4px; }
+.bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 54px; align-items: end; }
+.bars i { display: block; background: var(--op); border-radius: 2px 2px 0 0; min-height: 1px; }
+.bars i.z { background: var(--grid); }
+.hax { display: flex; justify-content: space-between; font: .68rem/1 var(--f-data); color: var(--faint); }
+.evid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.evid div { display: grid; gap: 3px; }
+.evid b { font: 500 1rem/1 var(--f-data); }
+.evid small { color: var(--muted); font-size: .72rem; line-height: 1.25; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; }
+summary:focus-visible, .chart:focus-visible { outline: 2px solid var(--apoya); outline-offset: 2px; }
+.tablewrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .82rem; }
+th, td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.foot { color: var(--faint); font-size: .78rem; }
+@media (max-width: 760px) {
+  .row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .axisrow .info { display: none; }
+  h1 { font-size: 1.7rem; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">murmur · narrativas y coordinación</div>
+      <h1 id="h1">Qué se dice y quién lo está armando</h1>
+      <p class="lede" id="lede"></p>
+    </div>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section style="display:grid;gap:14px">
+    <div class="sec-head">
+      <div><h2>Qué circula y desde cuándo</h2>
+        <p class="lede">Cada fila es una narrativa. Arriba de la línea, quienes la afirman; abajo, quienes la refutan. Volumen cada 6 horas, misma escala para todas.</p></div>
+      <div class="legend"><span><i class="sw a"></i>Apoya</span><span><i class="sw r"></i>Rechaza</span><span><i class="sw o"></i>Nace</span></div>
+    </div>
+    <div class="board" id="board"></div>
+    <details><summary>Ver como tabla</summary><div class="tablewrap"><table id="tabla"></table></div></details>
+  </section>
+
+  <section style="display:grid;gap:14px">
+    <div class="sec-head"><div><h2>Quién lo empuja</h2>
+      <p class="lede">Grupos de cuentas que coinciden una y otra vez en las mismas publicaciones, en minutos, y se responden entre sí.</p></div></div>
+    <div class="ops" id="ops"></div>
+  </section>
+  <p class="foot" id="foot"></p>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const M = DATA.meta, NB = M.nb;
+const fmt = new Intl.NumberFormat("es-AR");
+const TZ = -3 * 3600;
+const dd = t => { const d = new Date((t + TZ) * 1000); return d.getUTCDate() + "/" + (d.getUTCMonth() + 1); };
+const hh = t => { const d = new Date((t + TZ) * 1000); return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0"); };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const span = (M.t1 - M.t0);
+const xp = t => Math.max(0, Math.min(100, (t - M.t0) / (NB * M.bin) * 100));
+
+const N = DATA.narrativas, O = DATA.ops;
+document.getElementById("lede").textContent =
+  `${fmt.format(M.comentarios)} comentarios entre el ${dd(M.t0)} y el ${dd(M.t1)}. ${N.length} narrativas principales y ${O.length} operaciones coordinadas.`;
+const facts = [
+  [fmt.format(M.comentarios), "comentarios"],
+  [N.length, "narrativas"],
+  [O.length, "operaciones"],
+  [M.cuentas_marcadas, "cuentas coordinadas"],
+  ["US$ " + (M.usd ?? 0).toFixed(2), "gasto en IA"],
+];
+document.getElementById("facts").innerHTML = facts.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span class="eyebrow">${esc(l)}</span></div>`).join("");
+
+// escala compartida
+let ymax = 1;
+N.forEach(n => { n.a.forEach(v => ymax = Math.max(ymax, v)); n.r.forEach(v => ymax = Math.max(ymax, v)); });
+const W = 1000, H = 72, MID = H / 2;
+function area(vals, sign) {
+  const step = W / NB;
+  let d = `M0 ${MID}`;
+  vals.forEach((v, i) => { const y = MID - sign * (v / ymax) * (MID - 2); d += ` L${(i * step + step / 2).toFixed(1)} ${y.toFixed(1)}`; });
+  return d + ` L${W} ${MID} Z`;
+}
+function line(vals, sign) {
+  const step = W / NB;
+  return vals.map((v, i) => `${i ? "L" : "M"}${(i * step + step / 2).toFixed(1)} ${(MID - sign * (v / ymax) * (MID - 2)).toFixed(1)}`).join(" ");
+}
+
+// eje de días
+const days = [];
+for (let t = M.t0; t <= M.t0 + NB * M.bin; t += 86400) days.push(t);
+const every = days.length > 16 ? 2 : 1;
+const axisHTML = days.filter((_, i) => i % every === 0).map(t => `<span style="left:${xp(t)}%">${dd(t)}</span>`).join("");
+
+const board = document.getElementById("board");
+let html = `<div class="row axisrow"><div class="info"><span class="eyebrow">Narrativa</span></div><div class="axis">${axisHTML}</div></div>`;
+N.forEach((n, i) => {
+  const pa = Math.round(n.apoya / Math.max(1, n.total) * 100);
+  const chips = [];
+  if (n.emergente) chips.push(`<span class="chip em">Emergente</span>`);
+  n.empuja.forEach(e => chips.push(`<span class="chip op">Empujada por ${esc(e.grupo)}</span>`));
+  const gridlines = days.map(t => `<line x1="${xp(t) * W / 100}" x2="${xp(t) * W / 100}" y1="0" y2="${H}" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
+  html += `<div class="row">
+    <div class="info">
+      <div class="title">${esc(n.titulo)}</div>
+      <div class="sub"><span class="num">${fmt.format(n.total)}</span><span class="split" aria-hidden="true"><i class="a" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i></span><span class="num">${pa}% apoya</span><span>nace ${dd(n.origen)} ${hh(n.origen)}</span></div>
+      ${chips.length ? `<div class="sub">${chips.join("")}</div>` : ""}
+      <div class="keys">${n.claves.map(esc).join(" · ")}</div>
+    </div>
+    <div class="chart" data-i="${i}" tabindex="0" role="img" aria-label="${esc(n.titulo)}: ${fmt.format(n.apoya)} apoyan, ${fmt.format(n.rechaza)} rechazan, nace el ${dd(n.origen)}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        ${gridlines}
+        <path d="${area(n.a, 1)}" fill="var(--apoya-fill)"/>
+        <path d="${area(n.r, -1)}" fill="var(--rechaza-fill)"/>
+        <path d="${line(n.a, 1)}" fill="none" stroke="var(--apoya)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        <path d="${line(n.r, -1)}" fill="none" stroke="var(--rechaza)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        <line x1="0" x2="${W}" y1="${MID}" y2="${MID}" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <line x1="${xp(n.origen) * W / 100}" x2="${xp(n.origen) * W / 100}" y1="4" y2="${H - 4}" stroke="var(--ink)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="cross" hidden></div>
+    </div>
+  </div>`;
+});
+board.innerHTML = html;
+
+// tooltip
+const tip = document.getElementById("tip");
+function showTip(x, y, inner) {
+  tip.innerHTML = inner; tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+  tip.style.left = Math.max(8, left) + "px"; tip.style.top = Math.max(8, top) + "px";
+}
+board.querySelectorAll(".chart").forEach(el => {
+  const n = N[+el.dataset.i], cross = el.querySelector(".cross");
+  const move = (clientX, clientY) => {
+    const r = el.getBoundingClientRect();
+    const b = Math.max(0, Math.min(NB - 1, Math.floor((clientX - r.left) / r.width * NB)));
+    cross.hidden = false; cross.style.left = ((b + .5) / NB * 100) + "%";
+    const t = M.t0 + b * M.bin;
+    showTip(clientX, clientY, `<div class="eyebrow" style="margin-bottom:6px">${dd(t)} · ${hh(t)}–${hh(t + M.bin)}</div>
+      <div class="l"><span><i class="sw a"></i>Apoya</span><b class="num">${fmt.format(n.a[b])}</b></div>
+      <div class="l"><span><i class="sw r"></i>Rechaza</span><b class="num">${fmt.format(n.r[b])}</b></div>`);
+  };
+  el.addEventListener("pointermove", e => move(e.clientX, e.clientY));
+  el.addEventListener("pointerleave", () => { cross.hidden = true; tip.hidden = true; });
+  el.addEventListener("blur", () => { cross.hidden = true; tip.hidden = true; });
+});
+
+// tabla
+document.getElementById("tabla").innerHTML = `<thead><tr><th>Narrativa</th><th>Nace</th><th class="n">Total</th><th class="n">Apoya</th><th class="n">Rechaza</th><th>Frases clave</th></tr></thead><tbody>` +
+  N.map(n => `<tr><td>${esc(n.titulo)}</td><td class="n">${dd(n.origen)} ${hh(n.origen)}</td><td class="n">${fmt.format(n.total)}</td><td class="n">${fmt.format(n.apoya)}</td><td class="n">${fmt.format(n.rechaza)}</td><td>${n.claves.map(esc).join(", ")}</td></tr>`).join("") + `</tbody>`;
+
+// operaciones
+const ops = document.getElementById("ops");
+ops.innerHTML = O.length ? O.map(o => {
+  const hmax = Math.max(1, ...o.horas);
+  const bars = o.horas.map((v, h) => `<i class="${v ? "" : "z"}" data-h="${h}" data-v="${v}" style="height:${Math.max(2, v / hmax * 100)}%"></i>`).join("");
+  const peak = o.horas.indexOf(hmax);
+  return `<article class="opcard">
+    <div class="ophead"><span class="opname">${esc(o.grupo)}</span><span class="eyebrow num">${o.cuentas} cuentas · ${fmt.format(o.comentarios)} comentarios</span></div>
+    <div class="opfoco">${o.foco_titulo ? `Empuja <em>“${esc(o.foco_titulo)}”</em>, con el ${Math.round(o.foco_pct * 100)}% de sus comentarios propios.` : "Sin foco en una narrativa."}</div>
+    <div class="hours"><span class="eyebrow">A qué hora publican · pico ${String(peak).padStart(2, "0")} h</span>
+      <div class="bars" data-op="${esc(o.grupo)}">${bars}</div>
+      <div class="hax"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+    <div class="evid">
+      <div><b>${o.respuestas_internas}</b><small>respuestas entre ellas</small></div>
+      <div><b>${o.edad_dias == null ? "—" : fmt.format(o.edad_dias) + " d"}</b><small>antigüedad mediana de las cuentas</small></div>
+      <div><b>${o.seguidores == null ? "—" : fmt.format(o.seguidores)}</b><small>seguidores (mediana)</small></div>
+    </div>
+  </article>`;
+}).join("") : `<p class="lede">No se detectaron operaciones coordinadas.</p>`;
+ops.querySelectorAll(".bars i").forEach(b => {
+  b.addEventListener("pointermove", e => showTip(e.clientX, e.clientY, `<div class="l"><span>${String(b.dataset.h).padStart(2, "0")}–${String(+b.dataset.h + 1).padStart(2, "0")} h</span><b class="num">${fmt.format(+b.dataset.v)}</b></div>`));
+  b.addEventListener("pointerleave", () => tip.hidden = true);
+});
+
+document.getElementById("foot").textContent =
+  `Procesado en ${Math.round(M.segundos)} s. Embeddings locales; ${M.usd ? "IA para nombrar y orientar narrativas" : "sin IA"}. Narrativas con menos del 0,5% de los comentarios no se muestran.`;
+</script>

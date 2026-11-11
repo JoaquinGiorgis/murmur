@@ -13,7 +13,7 @@ pip install -r requirements.txt
 python -m murmur --datos datos/final --entrega entrega
 ```
 
-Un solo comando, de punta a punta. Deja en `entrega/` los cuatro archivos del formato oficial: `comentarios.csv`, `narrativas.csv`, `cuentas.csv` y `costo.json`.
+Un solo comando, de punta a punta. Deja en `entrega/` los cuatro archivos del formato oficial (`comentarios.csv`, `narrativas.csv`, `cuentas.csv` y `costo.json`) y un `dashboard.html` autocontenido: qué circula, desde cuándo y quién lo empuja. Se abre en cualquier navegador, sin servidor.
 
 - `--cache .murmur`: dónde quedan la base DuckDB y la caché de embeddings. Por defecto es `.murmur/`.
 - IA opcional: con `ANTHROPIC_API_KEY` en el entorno, se hace **una llamada por narrativa** (unas 15 en total) para decidir qué lado afirma y para nombrarla. Sin clave, o con `--sin-ia`, corre igual con heurísticos. El modelo se cambia con `MURMUR_LLM_MODELO`, y los precios para `costo.json` con `MURMUR_USD_MTOK_IN` y `MURMUR_USD_MTOK_OUT`.
@@ -29,13 +29,13 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 
 | Criterio | Línea base oficial | murmur |
 |---|---|---|
-| Agrupamiento de narrativas (B-cubed F1) | 0,35 | **0,975** |
-| Detección de ruido (F1) | 0,67 | **0,976** |
+| Agrupamiento de narrativas (B-cubed F1) | 0,35 | **0,977** |
+| Detección de ruido (F1) | 0,67 | **0,979** |
 | Postura (macro-F1) | 0,49 | 0,76 |
 | Origen de emergentes | 0,33 | **1,00** |
-| Cuentas coordinadas (F1) | 0,12 | **0,83** |
-| Agrupamiento de operaciones (B-cubed F1) | 0,28 | **0,92** |
-| **Total automático** | **16,8 / 55** | **49,4 / 55** |
+| Cuentas coordinadas (F1) | 0,12 | **0,94** (precisión 1,0) |
+| Agrupamiento de operaciones (B-cubed F1) | 0,28 | **0,88** |
+| **Total automático** | **16,8 / 55** | **51,0 / 55** |
 
 Costo en IA: **USD 0**. En una máquina de 2 CPU y 8 GB sin GPU, la corrida en frío tarda unos 10 minutos (6,5 de embeddings); con la caché de embeddings, unos 3.
 
@@ -61,6 +61,9 @@ Una ráfaga no alcanza: lo que delata a una operación es **la repetición**.
 2. Por cada par de cuentas, `k` es cuántas publicaciones distintas comparten así, y `coseno = k / √(pubs_a · pubs_b)`. Eso descuenta a las cuentas muy activas (que coinciden con todos por volumen) y a los virales genuinos (mucha gente distinta, una sola vez).
 3. Se suman las respuestas entre cuentas, porque hay operaciones que se responden entre sí.
 4. Leiden sobre el grafo de pares sospechosos. Se marcan las comunidades **chicas y densas**: una operación es un grupo cerrado que coincide una y otra vez, mientras que la opinión genuina forma árboles ralos.
+5. **Poda del núcleo:** dentro de cada comunidad se descartan, de forma iterativa, las cuentas cuyo lazo interno (co-acciones más respuestas entre miembros) queda por debajo de la mitad de la mediana del grupo. Así salen las cuentas genuinas muy activas que Leiden arrastró por volumen.
+
+El contenido que empuja una operación nunca se marca como ruido, aunque sea una plantilla que nadie responde: se asigna a la narrativa y al lado más cercanos por significado.
 
 No se usan la fecha de creación de las cuentas ni los hashtags. En el set de práctica separan perfecto, pero sería sobreajustar a ese set.
 

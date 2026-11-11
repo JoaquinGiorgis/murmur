@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import datos, embeddings, coordinacion, narrativas
+from . import datos, embeddings, coordinacion, narrativas, dashboard
 
 
 def _hardware():
@@ -74,7 +74,12 @@ def main():
     con.execute("CREATE OR REPLACE TABLE res_comentarios AS SELECT * FROM r_com")
     con.execute("CREATE OR REPLACE TABLE res_narrativas AS SELECT * FROM r_nar")
     con.execute("CREATE OR REPLACE TABLE res_cuentas AS SELECT * FROM r_cue")
+    info = con.execute("SELECT cuenta_id, fecha_creacion, seguidores FROM cuentas").df()
     con.close()
+
+    dashboard.generar(df, nd, grupos, ops, info, {
+        "comentarios": len(c), "cuentas_marcadas": int((grupos.grupo != "").sum()),
+        "segundos": round(time.time() - t0, 1), "usd": round(uso["usd"], 4)}, a.entrega / "dashboard.html")
 
     seg = round(time.time() - t0, 1)
     n = len(c)

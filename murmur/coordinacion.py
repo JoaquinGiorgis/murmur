@@ -22,7 +22,8 @@ VENTANA = 600          # segundos
 K_MIN, COS_MIN = 3, 0.15
 K_MIN_REP, COS_MIN_REP = 2, 0.08
 TAM_MIN, GRADO_MIN = 8, 3.0
-TAM_MAX_FRAC = 0.02    # una "operación" que abarca >2% de las cuentas es la masa de usuarios activos, no una operación
+PESO_RESP, PODA_FRAC = 3.0, 0.5
+TAM_MAX_FRAC = 0.02   # una "operación" que abarca >2% de las cuentas es la masa de usuarios activos, no una operación
 
 
 def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
@@ -63,11 +64,24 @@ def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
     part = la.find_partition(g, la.ModularityVertexPartition, weights="weight", seed=1)
     memb = np.array(part.membership)
 
+    # fuerza de lazo entre pares: co-acciones + respuestas (pesan más: responderse es interacción directa)
+    W = (K + K.T + PESO_RESP * (R + R.T)).tocsr()
+
     grupo = {}
     ops = []
     for cid in np.unique(memb):
         ii = np.nonzero(memb == cid)[0]
         if len(ii) < TAM_MIN or len(ii) > TAM_MAX_FRAC * N:
+            continue
+        # poda del núcleo: una operación es un grupo donde todos están muy ligados entre sí;
+        # las cuentas genuinas que Leiden arrastró quedan en la periferia con lazos internos débiles
+        while len(ii) >= TAM_MIN:
+            fuerza = np.asarray(W[ii][:, ii].sum(1)).ravel()
+            keep = fuerza >= PODA_FRAC * np.median(fuerza)
+            if keep.all():
+                break
+            ii = ii[keep]
+        if len(ii) < TAM_MIN:
             continue
         sub = g.subgraph(ii)
         grado = 2 * sub.ecount() / len(ii)
