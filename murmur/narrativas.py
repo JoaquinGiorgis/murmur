@@ -33,7 +33,7 @@ TASA_RESP_RUIDO = 0.02
 SIM_ASIGNAR = 0.80
 SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
-N_EJ, N_VOTOS = 16, 4
+N_EJ, N_VOTOS = 16, 8   # 8 votos: con 4, una narrativa dudosa (la IA erra 1 de cada 4) salía mal ~1 de cada 20 corridas
 RUIDO_REPETIDO = 20
 REF_TASA_RESP = 0.1403        # tasa de respuestas de práctica
 TASA_RELATIVA = True          # si el set responde menos que práctica, el umbral de ruido por tasa de respuesta baja en

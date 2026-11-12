@@ -4,6 +4,8 @@
 
 Una *murmuration* es una bandada de miles de estorninos que se mueve como un solo bicho. De afuera ves un patrón y no sabés si alguien lo dirige. Ese es el problema: separar el murmullo genuino de la bandada que alguien está moviendo.
 
+**En el set de práctica: 53,3 de 55 puntos automáticos con IA (52,6 sin IA), precisión 1,0 en cuentas coordinadas (ninguna cuenta genuina acusada), USD 0,03 de IA para 200.000 comentarios y unos 10 minutos en una notebook sin GPU.** Fuera de práctica, en 12 recortes y 7 variantes de datos, no acusa a ninguna cuenta genuina nueva (ver [Robustez y generalización](#robustez-y-generalización)).
+
 ## Cómo correrlo
 
 ```bash
@@ -23,7 +25,7 @@ HF_HUB_OFFLINE=1 python -m murmur --datos datos/final --entrega entrega
 Un solo comando, de punta a punta. Deja en `entrega/` exactamente los cuatro archivos del formato oficial (`comentarios.csv`, `narrativas.csv`, `cuentas.csv` y `costo.json`). Aparte, en `salida/dashboard.html` (se cambia con `--dashboard`), deja un dashboard autocontenido: qué circula, desde cuándo y quién lo empuja. Se abre en cualquier navegador, sin servidor.
 
 - `--cache .murmur`: dónde quedan la base DuckDB y la caché de embeddings. Por defecto es `.murmur/`.
-- IA opcional: con `ANTHROPIC_API_KEY` en el entorno, se hacen **4 llamadas por narrativa** (unas 50 en total) para decidir qué lado afirma y para nombrarla. Sin clave, o con `--sin-ia`, corre igual con heurísticos. El modelo se cambia con `MURMUR_LLM_MODELO`, y los precios para `costo.json` con `MURMUR_USD_MTOK_IN` y `MURMUR_USD_MTOK_OUT` (por defecto, los de Claude Haiku 5.5: USD 0,10 y 0,50 por millón de tokens). Si la API falla, reintenta con espera creciente; si sigue fallando, avisa en el log y en `costo.json` y termina sin IA, sin colgarse.
+- IA opcional: con `ANTHROPIC_API_KEY` en el entorno, se hacen **8 llamadas por narrativa** (unas 100 en total) para decidir qué lado afirma y para nombrarla. Sin clave, o con `--sin-ia`, corre igual con heurísticos. El modelo se cambia con `MURMUR_LLM_MODELO`, y los precios para `costo.json` con `MURMUR_USD_MTOK_IN` y `MURMUR_USD_MTOK_OUT` (por defecto, los de Claude Haiku 5.5: USD 0,10 y 0,50 por millón de tokens). Si la API falla, reintenta con espera creciente; si sigue fallando, avisa en el log y en `costo.json` y termina sin IA, sin colgarse.
 
 Para medirse contra el set de práctica:
 
@@ -40,11 +42,11 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 | Detección de ruido (F1) | 0,67 | 0,974 | **0,974** |
 | Postura (macro-F1) | 0,49 | 0,867 | **0,992** |
 | Origen de emergentes | 0,33 | 1,00 | **1,00** |
-| Cuentas coordinadas (F1) | 0,12 | 0,935 | **0,935** (precisión 1,0) |
-| Agrupamiento de operaciones (B-cubed F1) | 0,28 | 0,876 | **0,876** |
-| **Total automático** | **16,8 / 55** | **51,75 / 55** | **52,51 / 55** |
+| Cuentas coordinadas (F1) | 0,12 | 0,959 | **0,959** (precisión 1,0) |
+| Agrupamiento de operaciones (B-cubed F1) | 0,28 | 0,925 | **0,925** |
+| **Total automático** | **16,8 / 55** | **52,56 / 55** | **53,31 / 55** |
 
-Costo en IA: **USD 0** sin IA, **USD 0,017** con IA (52 llamadas a Claude Haiku 5.5 y 85.000 tokens para 200.000 comentarios: menos de una décima de centavo de dólar cada mil comentarios). Medido con versiones fijas desde un clon limpio y sin red.
+Costo en IA: **USD 0** sin IA, **USD 0,03** con IA (104 llamadas a Claude Haiku 5.5 y 165.000 tokens para 200.000 comentarios: menos de dos décimas de centavo de dólar cada mil comentarios). Etiquetar cada comentario con IA costaría cientos de veces más; acá se paga por narrativa, no por comentario. Medido con versiones fijas desde un clon limpio y sin red.
 
 ### Tiempo, memoria y disco
 
@@ -58,9 +60,9 @@ Corrida en frío sin IA sobre el set de práctica (200.000 comentarios), en una 
 | Narrativas (UMAP, HDBSCAN, Leiden) | 2,8 min | 2,1 GB |
 | **Total** | **unos 10 min** | **2,1 GB** |
 
-Con la caché de embeddings, una segunda corrida tarda unos 3 minutos sin IA y unos 5 con IA. En disco quedan 33 MB de base DuckDB y 55 MB de caché de embeddings.
+Con la caché de embeddings, una segunda corrida tarda unos 3 minutos sin IA y unos 6 a 8 con IA. En disco quedan 33 MB de base DuckDB y 55 MB de caché de embeddings.
 
-**A 1 millón de comentarios por día** (extrapolación lineal, no medida): con la misma proporción de textos únicos (38%) serían unos 380.000 textos nuevos por día, o sea unos 20–35 minutos de embeddings en esta notebook, y la caché crecería unos 280 MB por día. Coordinación y narrativas son matrices ralas y grafos de tamaño proporcional a comentarios y respuestas. La IA no crece: cuesta lo mismo con 200.000 que con 1 millón de comentarios, porque se paga por narrativa.
+**A 1 millón de comentarios (medido):** cinco copias del set de práctica con ids distintos (1.000.000 de comentarios, 80.000 cuentas, 2.500 publicaciones) corren en **3 minutos y 2,6 GB** sin contar embeddings: ingesta 5 s, coordinación 20 s, narrativas 2,4 min. Puntaje 49,7 con precisión 1,0 (medido antes de bajar el grado mínimo a 2,5). Los embeddings quedaron en caché porque los textos se repiten; con 1 millón de comentarios reales y 38% de textos únicos serían unos 380.000 textos nuevos, 20 a 35 minutos de embeddings en CPU (eso sí es extrapolación). La IA no crece: cuesta lo mismo con 200.000 que con 1 millón de comentarios, porque se paga por narrativa. Límite honesto: algunos umbrales absolutos (repeticiones para marcar ruido) están calibrados para 100.000 a 200.000 comentarios; a 1 millón el ruido baja de 0,97 a 0,92.
 
 ## Cómo funciona
 
@@ -72,8 +74,8 @@ Con la caché de embeddings, una segunda corrida tarda unos 3 minutos sin IA y u
    - El signo de cada arista da un **2-coloreo** que separa el lado que afirma del que refuta.
    - No depende del tema ni de palabras clave, y aguanta que la redacción cambie con los días: dos redacciones distintas del mismo reclamo quedan unidas porque las refutan los mismos.
 4. **Ruido:** clusters que casi no participan de conversaciones, más textos muy repetidos que nunca reciben ni hacen respuestas (avisos, chistes, "primero!").
-5. **Postura:** el 2-coloreo dice qué comentarios están del mismo lado; falta decidir cuál lado **apoya**. Con IA, un modelo chico lo decide mirando 16 ejemplos limpios de cada lado (sin muletillas ni emojis, que confunden). Le preguntamos 4 veces alternando qué grupo va primero, porque estos modelos tienen sesgo de posición, y gana la mayoría; si empata, decide el heurístico. Sin IA: si una operación coordinada se concentra en un lado, ese lado afirma (las operaciones amplifican reclamos); si no, gana el lado más grande. *Este es el punto débil sin IA: en narrativas 50/50 es casi una moneda.*
-6. **Fecha de origen:** el primer momento en que la narrativa junta un volumen sostenido en 3 horas, no el primer comentario suelto, que suele ser un error de asignación.
+5. **Postura:** el 2-coloreo dice qué comentarios están del mismo lado; falta decidir cuál lado **apoya**. Con IA, un modelo chico lo decide mirando 16 ejemplos limpios de cada lado (sin muletillas ni emojis, que confunden). Le preguntamos 8 veces alternando qué grupo va primero, porque estos modelos tienen sesgo de posición, y gana la mayoría; si empata, decide el heurístico. Sin IA: si una operación coordinada se concentra en un lado, ese lado afirma (las operaciones amplifican reclamos); si no, gana el lado más grande. *Este es el punto débil sin IA: en narrativas 50/50 es casi una moneda.*
+6. **Fecha de origen:** el primer momento en que la narrativa junta un volumen sostenido en 3 horas (0,5% de su tamaño, entre 10 y 25 comentarios), no el primer comentario suelto, que suele ser un error de asignación. El tope de 25 evita que una narrativa grande que nace lento, como una campaña nocturna, quede fechada horas tarde.
 7. **Títulos y frases clave sin IA:** el texto más frecuente y central del lado que afirma, sin las muletillas que se repiten en todas las narrativas ("te digo algo", "lamentable"), y frases clave por c-TF-IDF.
 
 ### Tarea B: coordinación
@@ -85,13 +87,48 @@ Una ráfaga no alcanza: lo que delata a una operación es **la repetición**.
 3. Se suman las respuestas entre cuentas, porque hay operaciones que se responden entre sí.
 4. Leiden sobre el grafo de pares sospechosos. Se marcan las comunidades **chicas y densas**: una operación es un grupo cerrado que coincide una y otra vez, mientras que la opinión genuina forma árboles ralos.
 5. **Poda del núcleo:** dentro de cada comunidad se descartan, de forma iterativa, las cuentas cuyo lazo interno (co-acciones más respuestas entre miembros) queda por debajo de la mitad de la mediana del grupo. Así salen las cuentas genuinas muy activas que Leiden arrastró por volumen.
-6. **Densidad mínima:** el grupo podado tiene que tener densidad (grado medio / (n − 1)) de al menos 0,09. Las operaciones reales dan entre 0,12 y 0,32; los grupos de usuarios genuinos muy activos, como mucho 0,063.
+6. **Densidad mínima:** el grupo podado tiene que tener densidad (grado medio / (n − 1)) de al menos 0,09 y grado medio de al menos 2,5. Las operaciones reales dan entre 0,12 y 0,32 de densidad; los grupos de usuarios genuinos muy activos, como mucho 0,063.
+7. **Satélites:** las cuentas de una campaña que comentan solo 2 o 3 veces no llegan a repetirse lo suficiente. Una cuenta se suma a una operación ya detectada solo si se dan tres cosas juntas: en al menos 2 publicaciones comenta a menos de 10 minutos de un comentario del núcleo, con un texto casi igual (similitud ≥ 0,8, al menos 4 palabras), y eso es al menos la mitad de su actividad. Cada señal sola no separa campaña de genuinos (medido); las tres juntas sí, sin sumar ningún falso positivo en el banco. Nunca crea operaciones nuevas.
 
-**Banco de estrés** (`tests/banco_estres.py`): corre el pipeline sobre 12 recortes del set de práctica (por días, por tema y por fracción de publicaciones) y los puntúa con el scorer oficial. Un cambio se acepta solo si no baja el puntaje de práctica ni sube los falsos positivos en ningún recorte. Con el filtro de densidad, los falsos positivos en los recortes bajaron de 3.641 a 2 sin tocar el puntaje de práctica. Con pocas publicaciones (25–50%) o un solo tema, el detector no marca a nadie: prefiere no acusar antes que acusar mal.
 
 El contenido que empuja una operación nunca se marca como ruido, aunque sea una plantilla que nadie responde: se asigna a la narrativa y al lado más cercanos por significado.
 
 No se usan la fecha de creación de las cuentas ni los hashtags. En el set de práctica separan perfecto, pero sería sobreajustar a ese set.
+
+## Robustez y generalización
+
+Para no ajustarnos al set de práctica, cada cambio pasa por un **banco de estrés** (`tests/banco_estres.py`): corre el pipeline sin IA sobre 12 recortes del set (por días, por tema y por fracción de publicaciones), con su verdad recalculada, y los puntúa con el scorer oficial. Un cambio se acepta solo si no baja el puntaje de práctica ni sube los falsos positivos en ningún recorte.
+
+| Recorte (sin IA) | Puntaje | Cuentas marcadas por error |
+|---|---|---|
+| Práctica completa | 52,56 | 0 |
+| Primeros 10 días (el más parecido al set final) | 52,62 | 1 |
+| Primeros 7 días / últimos 7 días | 43,85 / 38,32 | 0 / 0 |
+| Sin un tema (litio / hospital / colectivos) | 38,50 / 52,00 / 53,26 | 0 / 0 / 1 |
+| Un solo tema (litio / hospital / colectivos) | 53,30 / 41,71 / 26,31 | 0 / 0 / 0 |
+| 50% de las publicaciones (dos sorteos) / 25% | 36,17 / 41,20 / 26,71 | 0 / 0 / 0 |
+
+Los puntajes bajan cuando el recorte deja a una campaña con muy pocos comentarios: el detector prefiere no acusar antes que acusar mal. En total hay **2 falsos positivos en 13 corridas** (antes de agregar el filtro de densidad eran 3.641).
+
+Además lo corrimos sobre variantes del set con cambios de forma y de contenido (todas sin IA, precisión 1,0 en todas):
+
+| Variante | Puntaje |
+|---|---|
+| Fechas corridas 150 días y en UTC (`Z`) | 52,56 |
+| Ids nuevos no secuenciales y filas mezcladas | 52,59 |
+| CSV sucio: textos vacíos, filas duplicadas, respuestas a ids inexistentes, fechas ilegibles, cuentas faltantes, columnas extra, CRLF | 52,33 |
+| Mitad de las respuestas / 35% / 20% | 51,80 / 49,43 / 46,90 |
+| Unos 150.000 comentarios en 28 días con otra mezcla de temas | 40,03 |
+| Sin ninguna respuesta | 32,55 (no se cae) |
+| Fechas `dd/mm/aaaa` | corta con un mensaje claro que pide fechas ISO 8601 |
+
+La ingesta también acepta `.csv` sin comprimir, columnas faltantes (avisa), texto en latin-1 (lo detecta y lo relee) y comillas mal cerradas sin perder filas, y compara cuántas filas leyó contra el archivo. Si una etapa falla, la otra se entrega igual: los cuatro archivos siempre se escriben, y el proceso termina con código 2 y un aviso visible.
+
+**Límites conocidos:**
+- Las cuentas de campaña con un solo comentario no se pueden distinguir por comportamiento: no hay repetición que medir.
+- Con pocas publicaciones o un solo tema, una campaña puede quedar sin núcleo detectable y entonces no se marca.
+- Sin IA, la postura de narrativas parejas (50/50) es casi una moneda; con IA queda en 0,99.
+- El puntaje se midió en macOS arm64; en otra arquitectura UMAP puede mover decimales.
 
 ## Dónde guardamos los datos y por qué DuckDB
 
@@ -131,7 +168,7 @@ GROUP BY ALL ORDER BY de_operaciones DESC LIMIT 10;
 - **Embeddings:** es la única etapa cara y es lineal en *textos únicos*, no en comentarios. Con la caché, el costo diario es solo lo nuevo, y se paraleliza trivialmente (por lotes, con GPU o un servicio de embeddings).
 - **Narrativas:** se ajustan los clusters una vez por día y los comentarios nuevos se asignan por similitud al centroide más cercano, que es barato. Las respuestas siguen cosiendo y heredando en línea.
 - **Coordinación:** el grafo de co-acción se actualiza con ventanas deslizantes; las matrices son ralas y se pueden acumular por día.
-- **IA:** el costo es fijo por narrativa (4 llamadas cada una), no por comentario, así que no crece con el volumen.
+- **IA:** el costo es fijo por narrativa (8 llamadas cada una), no por comentario, así que no crece con el volumen.
 
 ## Código y librerías previas al evento
 
