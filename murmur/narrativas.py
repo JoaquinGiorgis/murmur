@@ -32,6 +32,8 @@ RESOLUCION = 1.0
 TASA_RESP_RUIDO = 0.02
 SIM_ASIGNAR = 0.80
 SIM_COORD = 0.55
+FRAG_FRAC, SIM_FRAG = 0.01, 0.5
+N_EJ, N_VOTOS = 16, 4
 RUIDO_REPETIDO = 20
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
@@ -207,6 +209,32 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     ren = {v: i + 1 for i, v in enumerate(orden)}
     cn = np.array([ren.get(v, -1) for v in cn])
 
+    # fragmentos: narrativas chicas que son pedazos de una grande (una variante de reclamo o de refutación
+    # que quedó sin cosido suficiente). Cada lado del fragmento se une al lado más parecido de una narrativa grande.
+    tot = (cn >= 0).sum()
+    tam_n = pd.Series(cn[cn >= 0]).value_counts()
+    grandes = set(tam_n[tam_n >= FRAG_FRAC * tot].index)
+    chicas = set(tam_n.index) - grandes
+    if grandes and chicas:
+        base = (cn >= 0) & ~isrep
+        def centroides(mask):
+            keys = sorted(set(zip(cn[mask], cs[mask])))
+            C = np.zeros((len(keys), E.shape[1]), np.float32)
+            pos = {k: j for j, k in enumerate(keys)}
+            np.add.at(C, np.array([pos[k] for k in zip(cn[mask], cs[mask])]), E[kid[mask]])
+            return keys, C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)
+        kg, Cg = centroides(base & np.isin(cn, list(grandes)))
+        kc, Cc = centroides(base & np.isin(cn, list(chicas)))
+        S = Cc @ Cg.T
+        destino = {kc[i]: kg[int(S[i].argmax())] for i in range(len(kc)) if S[i].max() >= SIM_FRAG}
+        for i in np.nonzero(np.isin(cn, list(chicas)))[0]:
+            k = (cn[i], cs[i])
+            if k in destino:
+                cn[i], cs[i] = destino[k]
+        vals, cnts = np.unique(cn[cn >= 0], return_counts=True)
+        ren = {v: i + 1 for i, v in enumerate(vals[np.argsort(-cnts)])}
+        cn = np.array([ren.get(v, -1) for v in cn])
+
     df = pd.DataFrame({"comentario_id": c.comentario_id.values, "n": cn, "s": cs, "ts": c.ts.values,
                        "texto": c.texto.values, "cuenta_id": c.cuenta_id.values, "rep": isrep, "kid": kid,
                        "respuesta_a": c.respuesta_a.values})
@@ -266,18 +294,45 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     if llm is not None:
         for i, r in nd.iterrows():
             gd = df[(df.n == r.n) & ~df.rep]
-            A = gd[gd.s == 1].texto.drop_duplicates().sample(frac=1, random_state=0).head(8).tolist()
-            B = gd[gd.s == -1].texto.drop_duplicates().sample(frac=1, random_state=0).head(8).tolist()
-            if not A or not B:
+            pa = gd[gd.s == 1].texto.drop_duplicates()
+            pb = gd[gd.s == -1].texto.drop_duplicates()
+            if len(pa) < 3 or len(pb) < 3:
                 continue
-            res = llm.juzgar(A, B, uso_ia)
-            if res:
-                nd.loc[i, "apo"] = 1 if res["lado"] == "A" else -1
-                nd.loc[i, "metodo_postura"] = "ia"
-                nd.loc[i, "titulo"] = res.get("titulo") or r.titulo
-                if res.get("frases_clave"):
-                    nd.at[i, "frases_clave"] = res["frases_clave"][:6]
+            def ej(p, k):
+                # ejemplos limpios: sin muletillas ni emojis, que confunden ("hay trabajo... Vergüenza.")
+                out = []
+                for t in p.sample(frac=1, random_state=k):
+                    t2 = _limpiar_titulo(t, muletillas)
+                    if len(t2.split()) >= 4 and t2 not in out:
+                        out.append(t2)
+                    if len(out) == N_EJ:
+                        break
+                return out
+            votos, respuestas = [], []
+            # varias preguntas alternando qué grupo va primero (el modelo tiene sesgo de posición); gana la mayoría
+            for k in range(N_VOTOS):
+                invertido = k % 2 == 1
+                A, B = (ej(pb, k), ej(pa, k)) if invertido else (ej(pa, k), ej(pb, k))
+                res = llm.juzgar(A, B, uso_ia)
+                if not res:
+                    continue
+                elige_a = res["lado"] == "A"
+                votos.append(1 if elige_a != invertido else -1)
+                respuestas.append(res)
+            if votos and sum(votos) != 0:
+                apo = 1 if sum(votos) > 0 else -1
+                nd.loc[i, "apo"] = apo
+                nd.loc[i, "metodo_postura"] = f"ia ({votos.count(apo)}/{len(votos)} votos)"
+                # el título sale de una respuesta que eligió el mismo lado que la mayoría
+                nombre = next(rr for v, rr in zip(votos, respuestas) if v == apo)
+                nd.loc[i, "titulo"] = nombre.get("titulo") or r.titulo
+                if nombre.get("frases_clave"):
+                    nd.at[i, "frases_clave"] = nombre["frases_clave"][:6]
 
+    # restos sin título (narrativas mínimas): el texto más repetido de la narrativa
+    for i, r in nd[nd.titulo.isna() | (nd.titulo.astype(str).str.strip() == "")].iterrows():
+        tx = df[df.n == r.n].texto
+        nd.loc[i, "titulo"] = _limpiar_titulo(tx.value_counts().index[0], muletillas) if len(tx) else f"narrativa {r.n}"
     apo_map = dict(zip(nd.n, nd.apo))
     df["narrativa"] = np.where(df.n >= 0, "n" + df.n.astype(str).str.zfill(2), "ninguna")
     df["postura"] = [("apoya" if s == apo_map.get(n, 1) else "rechaza") if n >= 0 else "" for n, s in zip(df.n, df.s)]
@@ -297,11 +352,16 @@ class LLM:
         self.usd_out = float(os.environ.get("MURMUR_USD_MTOK_OUT", "5.0"))
 
     def juzgar(self, A, B, uso):
-        prompt = ("Dos grupos de comentarios discuten la misma afirmación pública. Uno la AFIRMA o denuncia, "
-                  "el otro la REFUTA o la niega.\n\nGrupo A:\n- " + "\n- ".join(A) + "\n\nGrupo B:\n- " + "\n- ".join(B) +
-                  '\n\nRespondé solo JSON: {"lado": "A" o "B" (el que afirma), "titulo": "la afirmación en una frase", '
-                  '"frases_clave": ["3 a 6 términos"]}')
-        body = json.dumps({"model": self.modelo, "max_tokens": 300, "messages": [{"role": "user", "content": prompt}]}).encode()
+        prompt = ("En una red social, una afirmación circula sobre un tema local. Abajo hay comentarios de dos grupos que "
+                  "discuten esa misma afirmación: un grupo la sostiene y el otro le contesta para desmentirla, relativizarla "
+                  "o darla vuelta.\n\nGrupo A:\n- " + "\n- ".join(A) + "\n\nGrupo B:\n- " + "\n- ".join(B) +
+                  "\n\n¿Qué grupo sostiene la afirmación original (la idea que se propaga), y cuál es la respuesta? Pistas: la "
+                  "respuesta suele reaccionar a lo que dice el otro grupo (niega un hecho, dice que es exagerado, que es falso, "
+                  "que la causa es otra, que lo prometido no se cumplió o que la propuesta no sirve). La afirmación original es "
+                  "la idea que tiene sentido por sí sola sin necesitar al otro grupo.\n\n"
+                  'Respondé solo JSON: {"lado": "A" o "B" (el que sostiene la afirmación original), '
+                  '"titulo": "la afirmación original en una frase corta", "frases_clave": ["3 a 6 términos"]}')
+        body = json.dumps({"model": self.modelo, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}).encode()
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
             "x-api-key": self.key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
         try:
@@ -310,7 +370,7 @@ class LLM:
             ti, to = u.get("input_tokens", 0), u.get("output_tokens", 0)
             uso["tokens"] += ti + to; uso["llamadas"] += 1
             uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
-            txt = r["content"][0]["text"]
+            txt = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
             j = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
             return j if j.get("lado") in ("A", "B") else None
         except Exception:
