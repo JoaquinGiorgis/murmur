@@ -35,10 +35,9 @@ SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
 N_EJ, N_VOTOS = 16, 4
 RUIDO_REPETIDO = 20
-# Con pocas respuestas (set con menos conversación que práctica), apagados por defecto hasta validarlos:
 REF_TASA_RESP = 0.1403        # tasa de respuestas de práctica
-TASA_RELATIVA = False         # el umbral de ruido por tasa de respuesta baja en proporción si el set responde menos
-SIM_CAPA_K, SIM_CAPA_MIN = 0, 0.6   # capa de vecinos mutuos entre clusters finos (k=0: apagada); pesa más cuanto menos respuestas
+TASA_RELATIVA = True          # si el set responde menos que práctica, el umbral de ruido por tasa de respuesta baja en
+                              # proporción (nunca sube): con pocas respuestas, menos clusters genuinos quedan como ruido
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
@@ -125,23 +124,6 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     aristas = [e for e in w if w[e] >= ARISTA_MIN]
     pesos = [w[e] for e in aristas]
     tasa = isrep.mean() if N else 0.0
-    falta = float(np.clip((REF_TASA_RESP - tasa) / REF_TASA_RESP, 0, 1))  # 0 con la tasa de práctica o más
-    if SIM_CAPA_K and falta > 0 and nfc > SIM_CAPA_K:
-        # sin respuestas suficientes, clusters finos muy parecidos (vecinos mutuos) también se cosen; estas aristas
-        # no tienen signo, así que no deciden el lado (el 2-coloreo sigue usando solo respuestas)
-        Cf = np.zeros((nfc, E.shape[1]), np.float32)
-        okf = F >= 0
-        np.add.at(Cf, F[okf], E[kid[okf]])
-        Cf /= np.linalg.norm(Cf, axis=1, keepdims=True) + 1e-9
-        Sf = Cf @ Cf.T
-        np.fill_diagonal(Sf, -1)
-        vec = np.argsort(-Sf, axis=1)[:, :SIM_CAPA_K]
-        en = {(i, int(j)) for i in range(nfc) for j in vec[i]}
-        ya = set(aristas)
-        for i, j in en:
-            if i < j and (j, i) in en and Sf[i, j] >= SIM_CAPA_MIN and (i, j) not in ya:
-                aristas.append((i, j)); pesos.append(falta * ARISTA_MIN)
-        log(f"  tasa de respuestas {tasa:.1%}: capa de similitud con peso {falta:.2f}")
     g = ig.Graph(n=nfc, edges=aristas, edge_attrs={"weight": pesos})
     part = la.find_partition(g, la.RBConfigurationVertexPartition, weights="weight",
                              resolution_parameter=RESOLUCION, seed=1)

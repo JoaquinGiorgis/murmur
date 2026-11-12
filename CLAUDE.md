@@ -61,6 +61,8 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 - Descartados con medición: Leiden con `n_iterations=-1` (dias10 −3,87: parte una operación) y sumar a las operaciones cuentas periféricas (miles de genuinas coinciden igual que las de campaña).
 - Origen con umbral fijo (10 en 3 h + 30 en 24 h, sin escalar con el tamaño): **descartado**. Comentarios mal asignados juntaron 10 en 3 h cinco días antes y en sin_colectivo el origen de H3 cayó de 1,0 a 0 (−2,25). El umbral que crece con el tamaño protege contra esas fugas.
 - Tope de origen (ORIGEN_TOPE=25): el umbral sigue creciendo con el tamaño, pero hasta 25 comentarios en 3 h. En el set de ~150k el origen de H3 pasa de 0,64 a 1,0 (38,03 → 38,85); el banco queda idéntico. Con tope 15 falla sin_colectivo.
+- Umbral de ruido relativo a la tasa de respuestas (TASA_RELATIVA): con 50/35/20% de las respuestas, 51,00→51,01, 48,42→48,48 y 45,17→45,49; banco idéntico byte a byte. Activado.
+- Capa de vecinos mutuos entre clusters finos en Leiden: **descartada**. Sube B-cubed pero la postura cae de 0,85 a 0,35 (une afirmación y refutación por similitud).
 - OJO: con pandas 3, `to_datetime(...).astype("int64")` da microsegundos, no nanosegundos. Los análisis de texto casi duplicado, periferia y sincronía se rehicieron con la unidad corregida, y ninguno separa campaña de genuinas sin perder precisión. dias10: sincronía ≤30 s en ≥3 publicaciones, 7 de campaña contra 62 genuinas; periferia ≥20%, 8 contra 96; texto ≥0,6 en ≥2 publicaciones, 119 pares contra 1.010.
 - Límite conocido: las cuentas de campaña con 2 o 3 comentarios no se distinguen por co-acción. Es la mayor pérdida que queda (~4 puntos en dias10).
 
