@@ -24,6 +24,7 @@ K_MIN_REP, COS_MIN_REP = 2, 0.08
 TAM_MIN, GRADO_MIN = 8, 3.0
 PESO_RESP, PODA_FRAC = 3.0, 0.5
 TAM_MAX_FRAC = 0.02   # una "operación" que abarca >2% de las cuentas es la masa de usuarios activos, no una operación
+DENS_MIN = 0.09       # densidad del grupo podado (grado medio / (n-1)): operaciones 0,12-0,32; grupos genuinos <= 0,063
 
 
 def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
@@ -85,9 +86,10 @@ def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
             continue
         sub = g.subgraph(ii)
         grado = 2 * sub.ecount() / len(ii)
-        if grado >= GRADO_MIN:
+        densidad = grado / (len(ii) - 1)
+        if grado >= GRADO_MIN and densidad >= DENS_MIN:
             nombre = f"op{len(ops) + 1:02d}"
-            ops.append({"grupo": nombre, "cuentas": int(len(ii)), "grado_medio": round(grado, 2)})
+            ops.append({"grupo": nombre, "cuentas": int(len(ii)), "grado_medio": round(grado, 2), "densidad": round(densidad, 3)})
             for i in ii:
                 grupo[acc[i]] = nombre
     log(f"  operaciones: {len(ops)}  cuentas marcadas: {len(grupo)}")
