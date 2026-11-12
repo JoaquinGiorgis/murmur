@@ -18,7 +18,7 @@
 5. Origen: primer momento en que la narrativa junta un volumen sostenido en 3 h
    (no el primer comentario suelto, que suele ser un error de asignación).
 """
-import heapq, json, os, re, unicodedata, urllib.request
+import heapq, json, os, random, re, time, unicodedata, urllib.error, urllib.request
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -325,9 +325,15 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
                 nd.loc[i, "metodo_postura"] = f"ia ({votos.count(apo)}/{len(votos)} votos)"
                 # el título sale de una respuesta que eligió el mismo lado que la mayoría
                 nombre = next(rr for v, rr in zip(votos, respuestas) if v == apo)
-                nd.loc[i, "titulo"] = nombre.get("titulo") or r.titulo
-                if nombre.get("frases_clave"):
-                    nd.at[i, "frases_clave"] = nombre["frases_clave"][:6]
+                nd.loc[i, "titulo"] = str(nombre.get("titulo") or "").strip() or r.titulo
+                fc = nombre.get("frases_clave")
+                fc = [fc] if isinstance(fc, str) else (fc if isinstance(fc, list) else [])
+                fc = [str(x).replace("|", " ").strip() for x in fc if str(x).strip()]
+                if fc:
+                    nd.at[i, "frases_clave"] = fc[:6]
+        if llm.fallos or llm.abortado:
+            log(f"  AVISO IA: {llm.fallos} llamadas fallidas{' — ' + llm.abortado if llm.abortado else ''}; "
+                f"las narrativas sin votos usan la postura heurística")
 
     # restos sin título (narrativas mínimas): el texto más repetido de la narrativa
     for i, r in nd[nd.titulo.isna() | (nd.titulo.astype(str).str.strip() == "")].iterrows():
@@ -345,11 +351,70 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
 class LLM:
     """Juez opcional: decide qué lado afirma la narrativa y la nombra. Una llamada por narrativa."""
 
-    def __init__(self):
+    REINTENTOS = 6                  # por llamada, con espera creciente (429, 5xx, 529, red)
+    CORTE_SEGUIDOS = 4              # llamadas seguidas que fallan del todo -> se deja de usar la IA en esta corrida
+    TRANSITORIOS = {408, 409, 425, 429, 500, 502, 503, 504, 529}
+    PRESUPUESTO_S = 300             # tiempo total perdido en fallos antes de seguir sin IA (la corrida no se cuelga)
+
+    def __init__(self, log=print):
         self.key = os.environ["ANTHROPIC_API_KEY"]
         self.modelo = os.environ.get("MURMUR_LLM_MODELO", "claude-haiku-5-5")
         self.usd_in = float(os.environ.get("MURMUR_USD_MTOK_IN", "1.0"))
         self.usd_out = float(os.environ.get("MURMUR_USD_MTOK_OUT", "5.0"))
+        self.log = log
+        self.fallos = 0             # llamadas que terminaron sin respuesta usable
+        self.seguidos = 0
+        self.perdido = 0.0          # segundos gastados en intentos fallidos
+        self.abortado = ""          # motivo si se dejó de usar la IA
+
+    def _cortar(self, motivo):
+        if not self.abortado:
+            self.abortado = motivo
+            self.log(f"  AVISO IA: {motivo}; sigo sin IA (postura heurística)")
+
+    def _post(self, body):
+        """POST a la API con reintentos. Devuelve el JSON o None (y cuenta el fallo)."""
+        espera = 2.0
+        for intento in range(self.REINTENTOS):
+            t0 = time.time()
+            req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
+                "x-api-key": self.key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+            try:
+                return json.loads(urllib.request.urlopen(req, timeout=60).read())
+            except urllib.error.HTTPError as e:
+                try:
+                    detalle = e.read().decode("utf-8", "replace")[:300]
+                except Exception:
+                    detalle = ""
+                if e.code in (401, 403):
+                    self._cortar(f"clave rechazada (HTTP {e.code})")
+                    return None
+                if e.code == 404:
+                    self._cortar(f"modelo {self.modelo} no encontrado (HTTP 404)")
+                    return None
+                if e.code == 400 and re.search(r"credit|billing|limit|spend", detalle, re.I):
+                    self._cortar("sin saldo o tope de gasto alcanzado (HTTP 400); esperar no lo arregla")
+                    return None
+                if e.code not in self.TRANSITORIOS:
+                    self.log(f"  IA: HTTP {e.code} {detalle[:120]}")
+                    return None
+                ra = e.headers.get("retry-after") if e.headers else None
+                pausa = float(ra) if ra and ra.replace(".", "", 1).isdigit() else espera
+                motivo = f"HTTP {e.code}"
+            except Exception as e:  # timeout, conexión cortada, DNS
+                pausa, motivo = espera, type(e).__name__
+            self.perdido += time.time() - t0
+            if self.perdido >= self.PRESUPUESTO_S:
+                self._cortar(f"{self.perdido:.0f}s perdidos en fallos de la API ({motivo})")
+                return None
+            if intento + 1 < self.REINTENTOS:
+                pausa = min(pausa, 60.0, self.PRESUPUESTO_S - self.perdido) * (0.75 + 0.5 * random.random())
+                self.perdido += pausa
+                self.log(f"  IA: {motivo}, reintento {intento + 1}/{self.REINTENTOS - 1} en {pausa:.0f}s")
+                time.sleep(pausa)
+                espera = min(espera * 2, 30.0)
+        self.log(f"  IA: {motivo} tras {self.REINTENTOS} intentos")
+        return None
 
     def juzgar(self, A, B, uso):
         prompt = ("En una red social, una afirmación circula sobre un tema local. Abajo hay comentarios de dos grupos que "
@@ -361,17 +426,27 @@ class LLM:
                   "la idea que tiene sentido por sí sola sin necesitar al otro grupo.\n\n"
                   'Respondé solo JSON: {"lado": "A" o "B" (el que sostiene la afirmación original), '
                   '"titulo": "la afirmación original en una frase corta", "frases_clave": ["3 a 6 términos"]}')
+        if self.abortado:
+            return None
         body = json.dumps({"model": self.modelo, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}).encode()
-        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
-            "x-api-key": self.key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+        r = self._post(body)
+        if r is None:
+            self.fallos += 1
+            self.seguidos += 1
+            if self.seguidos >= self.CORTE_SEGUIDOS:
+                self._cortar(f"{self.seguidos} llamadas seguidas sin respuesta")
+            return None
+        self.seguidos = 0
+        u = r.get("usage", {})
+        ti, to = u.get("input_tokens", 0), u.get("output_tokens", 0)
+        uso["tokens"] += ti + to; uso["llamadas"] += 1
+        uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
         try:
-            r = json.loads(urllib.request.urlopen(req, timeout=60).read())
-            u = r.get("usage", {})
-            ti, to = u.get("input_tokens", 0), u.get("output_tokens", 0)
-            uso["tokens"] += ti + to; uso["llamadas"] += 1
-            uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
             txt = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
             j = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
-            return j if j.get("lado") in ("A", "B") else None
+            if isinstance(j, dict) and j.get("lado") in ("A", "B"):
+                return j
         except Exception:
-            return None
+            pass
+        self.fallos += 1
+        return None

@@ -55,7 +55,7 @@ def main():
     t = time.time()
     llm = None
     if os.environ.get("ANTHROPIC_API_KEY") and not a.sin_ia:
-        llm = narrativas.LLM()
+        llm = narrativas.LLM(log=log)
         log(f"  IA activada ({llm.modelo}) para elegir postura y nombrar narrativas")
     df, nd, uso = narrativas.narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
     tiempos["narrativas"] = round(time.time() - t, 1)
@@ -63,7 +63,8 @@ def main():
     # --- entrega
     df[["comentario_id", "narrativa", "postura"]].to_csv(a.entrega / "comentarios.csv", index=False)
     out_n = nd[["narrativa", "titulo", "frases_clave", "fecha_origen"]].copy()
-    out_n["frases_clave"] = out_n.frases_clave.map(lambda l: "|".join(l))
+    out_n["frases_clave"] = out_n.frases_clave.map(
+        lambda l: "|".join(map(str, l)) if isinstance(l, (list, tuple)) else ("" if l is None else str(l)))
     out_n.to_csv(a.entrega / "narrativas.csv", index=False)
     grupos.to_csv(a.entrega / "cuentas.csv", index=False)
 
@@ -93,6 +94,8 @@ def main():
         "almacenamiento": "DuckDB local (archivo único) + Parquet para caché de embeddings",
         "notas": (f"embeddings locales ({embeddings.MODELO.split('/')[-1]}) sobre {est['textos_unicos']} textos únicos; "
                   f"IA {'solo para elegir postura y nombrar narrativas (' + str(uso['llamadas']) + ' llamadas)' if uso['llamadas'] else 'no usada'}; "
+                  + (f"IA con fallos ({llm.fallos} llamadas{', ' + llm.abortado if llm.abortado else ''}): esas narrativas usan postura heurística; "
+                     if llm is not None and (llm.fallos or llm.abortado) else "") +
                   f"tiempos por etapa (s): {tiempos}"),
     }
     (a.entrega / "costo.json").write_text(json.dumps(costo, ensure_ascii=False, indent=2), encoding="utf-8")
