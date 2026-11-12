@@ -44,8 +44,9 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 1–3 **hechos** (3374c1d, 5d18137, 9bb4358). Ensayo en clon limpio sin red: 51,75 en 9 min; con IA 52,51 (52 llamadas, USD 0,17).
 
 4. **Umbrales de narrativas relativos: PROBADO Y DESCARTADO.** Escalar `ARISTA_MIN` y `RUIDO_REPETIDO` por volumen y `TASA_RESP_RUIDO` por tasa global (idénticos en práctica) bajó narrativas en 10 de 12 recortes (−2,85 en total, −1,31 en pubs50_s1). Los absolutos rinden mejor; no reintentar. Quedó solo la alarma de ruido > 35% (solo log).
+   - Fundir mini-narrativas (< 0,1% de los comentarios; las 13 de práctica, 91 comentarios, son todas pedazos de narrativas grandes): **descartado**. B-cubed sube un poco en todos los recortes, pero sin IA la postura de narrativas casi 50/50 se da vuelta por 10 comentarios: sin_colectivo −0,77, pubs50_s1 −0,59 (−1,27 en total). Solo valdría si la postura del "lado mayor" se decide antes de fundir.
    - Capa de texto casi duplicado en coordinación: también descartada. En este set los genuinos usan plantillas (230 pares de campaña vs 256.000 genuinos a similitud ≥ 0,7). Los hashtags propios son 100% de campaña en práctica, pero no se pueden validar contra el set final.
-5. **Entrega y README:**
+5. **Entrega y README: hecho** (3995498). Dashboard en `salida/`, costo real USD 0,017 con precios de Haiku 5.5, tabla de tiempo y memoria (10 min en frío, 2,1 GB), SQL de ejemplo.
    - Mover `dashboard.html` fuera de `entrega/` (las bases piden 4 archivos).
    - Corregir "unas 15 llamadas" (fueron unas 50) y verificar los precios por defecto en `costo.json`.
    - Reportar el tiempo en frío y agregar una tabla de escala y memoria por etapa, con extrapolación a 1M comentarios por día.
