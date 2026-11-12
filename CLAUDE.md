@@ -54,6 +54,13 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
    - Fundir las mini-narrativas basura (de 1 a 27 comentarios).
 6. **Video y pitch.** Hilo: el problema, por qué no todo con IA, la idea clave (las respuestas cosen las narrativas y la repetición delata a las operaciones), números y costo, y la demo del dashboard. Lema de QualyData: *Model. Integrate. Scale.*; hablar en ese idioma.
 
+**Jueves 12/11, tarde (hecho):**
+- Robustez (257c91f): ingesta tolerante a CSV raros, latin-1, .csv sin comprimir y columnas faltantes; fechas no ISO cortan con un mensaje claro; coordinación y narrativas protegidas por separado (sin respuestas: 23,43 en vez de caerse; sale con código 2). Práctica y banco idénticos byte a byte.
+- Fragmentos (06ca12f): `FRAG_FRAC` de 0,01 a 0,003, porque las emergentes chicas (H3 0,82%) se fundían con narrativas viejas. dias10 47,85 → 49,69 y dias7 36,10 → 39,14; el resto, idéntico.
+- Con IA fuera de práctica: dias10 50,05 y sin_litio 40,28 (postura 0,99).
+- Descartados con medición: Leiden con `n_iterations=-1` (dias10 −3,87: parte una operación) y sumar a las operaciones cuentas periféricas (miles de genuinas coinciden igual que las de campaña).
+- Límite conocido: las cuentas de campaña con 2 o 3 comentarios no se distinguen por co-acción. Es la mayor pérdida que queda (~4 puntos en dias10).
+
 **Viernes:** correr sin IA y pushear de inmediato; después con IA y pisar. No tocar código ese día.
 
 **No hacer:** cambiar embeddings o UMAP; reajustar umbrales para pasar de 52,5 a 53 en práctica; IA por comentario; usar la fecha de creación de cuentas como regla dura.
