@@ -35,6 +35,7 @@ SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.01, 0.5
 N_EJ, N_VOTOS = 16, 4
 RUIDO_REPETIDO = 20
+RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
 
@@ -344,7 +345,11 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     df["postura"] = [("apoya" if s == apo_map.get(n, 1) else "rechaza") if n >= 0 else "" for n, s in zip(df.n, df.s)]
     nd["narrativa"] = "n" + nd.n.astype(str).str.zfill(2)
     nd["fecha_origen"] = pd.to_datetime(nd.origen, unit="s", utc=True).dt.tz_convert("America/Argentina/Buenos_Aires").map(lambda t: t.isoformat())
-    log(f"  narrativas: {len(nd)}  ruido: {(df.n < 0).mean():.1%}")
+    ruido = (df.n < 0).mean()
+    log(f"  narrativas: {len(nd)}  ruido: {ruido:.1%}")
+    if ruido > RUIDO_ALARMA:
+        log(f"  AVISO: {ruido:.0%} de los comentarios quedó como ruido (práctica: ~20%). Revisar el set: "
+            f"pocas respuestas o textos muy cortos dejan clusters sin conversación.")
     return df, nd, uso_ia
 
 

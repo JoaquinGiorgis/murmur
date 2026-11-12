@@ -41,7 +41,10 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
    - Sumar un **banco de estrés** como test (recortes por tiempo, tema y volumen, puntuados con el scorer). Aceptar cambios de coordinación solo si no suben los FP en ningún recorte.
 2. **Ensayo general:** clon limpio, versiones fijas en `requirements.txt`, modelo de embeddings precargado (probar con `HF_HUB_OFFLINE=1`), corrida en frío cronometrada y validación de que la salida tenga todos los ids.
 3. **IA robusta:** hoy `LLM.juzgar` traga excepciones y devuelve None sin avisar. Sumar reintentos y backoff ante 429/5xx, un log visible si cae al heurístico, y `map(str)` sobre las frases clave (en `__main__.py`, `"|".join` rompe si viene un string o un no-string).
-4. **Umbrales de narrativas relativos a la tasa de respuestas:** `ARISTA_MIN=3`, `TASA_RESP_RUIDO=0.02` y `RUIDO_REPETIDO=20` son absolutos. Con pocas respuestas explotan las narrativas o todo queda como ruido. Sumar una alarma si el ruido supera ~35%.
+1–3 **hechos** (3374c1d, 5d18137, 9bb4358). Ensayo en clon limpio sin red: 51,75 en 9 min; con IA 52,51 (52 llamadas, USD 0,17).
+
+4. **Umbrales de narrativas relativos: PROBADO Y DESCARTADO.** Escalar `ARISTA_MIN` y `RUIDO_REPETIDO` por volumen y `TASA_RESP_RUIDO` por tasa global (idénticos en práctica) bajó narrativas en 10 de 12 recortes (−2,85 en total, −1,31 en pubs50_s1). Los absolutos rinden mejor; no reintentar. Quedó solo la alarma de ruido > 35% (solo log).
+   - Capa de texto casi duplicado en coordinación: también descartada. En este set los genuinos usan plantillas (230 pares de campaña vs 256.000 genuinos a similitud ≥ 0,7). Los hashtags propios son 100% de campaña en práctica, pero no se pueden validar contra el set final.
 5. **Entrega y README:**
    - Mover `dashboard.html` fuera de `entrega/` (las bases piden 4 archivos).
    - Corregir "unas 15 llamadas" (fueron unas 50) y verificar los precios por defecto en `costo.json`.
