@@ -59,6 +59,8 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 - Fragmentos (06ca12f): `FRAG_FRAC` de 0,01 a 0,003, porque las emergentes chicas (H3 0,82%) se fundían con narrativas viejas. dias10 47,85 → 49,69 y dias7 36,10 → 39,14; el resto, idéntico.
 - Con IA fuera de práctica: dias10 50,05 y sin_litio 40,28 (postura 0,99).
 - Descartados con medición: Leiden con `n_iterations=-1` (dias10 −3,87: parte una operación) y sumar a las operaciones cuentas periféricas (miles de genuinas coinciden igual que las de campaña).
+- Origen con umbral fijo (10 en 3 h + 30 en 24 h, sin escalar con el tamaño): **descartado**. Comentarios mal asignados juntaron 10 en 3 h cinco días antes y en sin_colectivo el origen de H3 cayó de 1,0 a 0 (−2,25). El umbral que crece con el tamaño protege contra esas fugas.
+- Sincronía en segundos con el núcleo para cuentas de baja actividad: no separa (miles de genuinas a ≤10 s por cada cuenta de campaña).
 - Límite conocido: las cuentas de campaña con 2 o 3 comentarios no se distinguen por co-acción. Es la mayor pérdida que queda (~4 puntos en dias10).
 
 **Viernes:** correr sin IA y pushear de inmediato; después con IA y pisar. No tocar código ese día.
