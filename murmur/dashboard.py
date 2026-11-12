@@ -26,6 +26,15 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
     op_n = raiz_op.groupby(["grupo", "narrativa"]).size()
     op_tot = raiz_op.groupby("grupo").size()
 
+    def ejemplo(textos):
+        """El texto más repetido (normalizado por espacios), recortado: muestra la postura con palabras reales."""
+        t = textos.astype(str).str.strip()
+        t = t[t.str.split().str.len() >= 5]
+        if not len(t):
+            return ""
+        x = t.value_counts().index[0]
+        return x if len(x) <= 160 else x[:157].rstrip() + "…"
+
     narrs = []
     for _, r in nd.sort_values("comentarios", ascending=False).iterrows():
         sub = df[df.narrativa == r.narrativa]
@@ -44,6 +53,8 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
             "origen": int(r.origen), "emergente": bool(r.origen > t0 + 86400 + 12 * 3600),
             "total": int(len(sub)), "apoya": int(a.sum()), "rechaza": int(x.sum()),
             "a": a.tolist(), "r": x.tolist(), "empuja": empuja,
+            "ej_apoya": ejemplo(sub[(sub.postura == "apoya") & ~sub.rep].texto),
+            "ej_rechaza": ejemplo(sub[(sub.postura == "rechaza") & ~sub.rep].texto),
         })
 
     ci = cuentas_info.set_index("cuenta_id")
@@ -72,8 +83,12 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
             "edad_dias": None if pd.isna(edad) else int(edad),
             "seguidores": None if info.seguidores.isna().all() else int(info.seguidores.median()),
             "respuestas_internas": entre,
+            "textos": [{"texto": t if len(t) <= 140 else t[:137].rstrip() + "…", "veces": int(v)}
+                       for t, v in (lambda t: t[t.str.split().str.len() >= 4])(sub[~sub.rep].texto.astype(str).str.strip())
+                       .value_counts().head(3).items()],
         })
 
     data = {"meta": {**meta, "t0": t0, "t1": t1, "bin": BIN, "nb": nb}, "narrativas": narrs, "ops": lista_ops}
     plantilla = (Path(__file__).parent / "dashboard.html").read_text(encoding="utf-8")
-    salida.write_text(plantilla.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+    js = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")  # un texto con </script> no rompe la página
+    salida.write_text(plantilla.replace("/*__DATA__*/null", js), encoding="utf-8")

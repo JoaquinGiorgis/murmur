@@ -119,6 +119,9 @@ def main():
         "usd_ia": round(uso["usd"], 4),
         "usd_por_mil_comentarios": round(uso["usd"] / n * 1000, 6) if n else 0,
         "memoria_pico_mb": _pico_mb(),
+        "llamadas_ia": int(uso["llamadas"]),
+        "tiempos_s": tiempos,
+        "memoria_mb_por_etapa": memoria,
         "hardware": _hardware(),
         "almacenamiento": "DuckDB local (archivo único) + Parquet para caché de embeddings",
         "notas": (f"embeddings locales ({embeddings.MODELO.split('/')[-1]}) sobre {est['textos_unicos']} textos únicos; "

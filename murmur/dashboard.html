@@ -100,6 +100,16 @@ th, td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line);
 th { color: var(--muted); font-weight: 500; }
 td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .foot { color: var(--faint); font-size: .78rem; }
+.minuto { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.minuto > div { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.minuto h3 { margin: 0 0 8px; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.minuto ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: .92rem; line-height: 1.35; }
+.ej { font-size: .82rem; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+.ej b { font-weight: 600; }
+.ej .ea { color: var(--apoya); } .ej .er { color: var(--rechaza); }
+.optext { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+.optext q { color: var(--ink); }
+@media (max-width: 760px) { .minuto { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .axisrow .info { display: none; }
@@ -116,6 +126,8 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-alig
     </div>
     <div class="facts" id="facts"></div>
   </header>
+
+  <section class="minuto" id="minuto" aria-label="Resumen en un minuto"></section>
 
   <section style="display:grid;gap:14px">
     <div class="sec-head">
@@ -157,6 +169,17 @@ const facts = [
   [M.cuentas_marcadas, "cuentas coordinadas"],
   ["US$ " + (M.usd ?? 0).toFixed(2), "gasto en IA"],
 ];
+// en un minuto: qué circula, desde cuándo y quién lo empuja, en palabras
+{
+  const top = N.slice(0, 3).map(n => `<li><b>${esc(n.titulo)}</b> <span class="num">(${fmt.format(n.total)}, ${Math.round(n.apoya / Math.max(1, n.total) * 100)}% apoya)</span></li>`).join("");
+  const em = N.filter(n => n.emergente).sort((a, b) => a.origen - b.origen);
+  const ems = em.length ? em.map(n => `<li>Nace el <b>${dd(n.origen)} a las ${hh(n.origen)}</b>: ${esc(n.titulo)}</li>`).join("") : "<li>Ninguna narrativa principal nació dentro del período: todas ya circulaban al empezar.</li>";
+  const opl = O.length ? O.map(o => { const pk = o.horas.indexOf(Math.max(...o.horas));
+      return `<li><b>${esc(o.grupo)}</b>: ${o.cuentas} cuentas${o.edad_dias != null ? ` de ${fmt.format(o.edad_dias)} días de antigüedad mediana` : ""}, pico a las ${String(pk).padStart(2, "0")} h${o.foco_titulo ? `, empuja “${esc(o.foco_titulo)}”` : ""}.</li>`; }).join("")
+    : "<li>No se detectaron operaciones coordinadas: ningún grupo de cuentas coincide una y otra vez.</li>";
+  document.getElementById("minuto").innerHTML =
+    `<div><h3>Qué circula</h3><ul>${top}</ul></div><div><h3>Qué nació en el período</h3><ul>${ems}</ul></div><div><h3>Quién lo empuja</h3><ul>${opl}</ul></div>`;
+}
 document.getElementById("facts").innerHTML = facts.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span class="eyebrow">${esc(l)}</span></div>`).join("");
 
 // escala compartida
@@ -193,6 +216,8 @@ N.forEach((n, i) => {
       <div class="title">${esc(n.titulo)}</div>
       <div class="sub"><span class="num">${fmt.format(n.total)}</span><span class="split" aria-hidden="true"><i class="a" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i></span><span class="num">${pa}% apoya</span><span>nace ${dd(n.origen)} ${hh(n.origen)}</span></div>
       ${chips.length ? `<div class="sub">${chips.join("")}</div>` : ""}
+      ${n.ej_apoya ? `<div class="ej"><b class="ea">Afirma:</b> “${esc(n.ej_apoya)}”</div>` : ""}
+      ${n.ej_rechaza ? `<div class="ej"><b class="er">Refuta:</b> “${esc(n.ej_rechaza)}”</div>` : ""}
       <div class="keys">${n.claves.map(esc).join(" · ")}</div>
     </div>
     <div class="chart" data-i="${i}" tabindex="0" role="img" aria-label="${esc(n.titulo)}: ${fmt.format(n.apoya)} apoyan, ${fmt.format(n.rechaza)} rechazan, nace el ${dd(n.origen)}">
@@ -253,6 +278,7 @@ ops.innerHTML = O.length ? O.map(o => {
     <div class="hours"><span class="eyebrow">A qué hora publican · pico ${String(peak).padStart(2, "0")} h</span>
       <div class="bars" data-op="${esc(o.grupo)}">${bars}</div>
       <div class="hax"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+    ${o.textos && o.textos.length ? `<div class="optext"><span class="eyebrow">Lo que más repiten</span>${o.textos.map(t => `<div><q>${esc(t.texto)}</q> <span class="num">×${fmt.format(t.veces)}</span></div>`).join("")}</div>` : ""}
     <div class="evid">
       <div><b>${o.respuestas_internas}</b><small>respuestas entre ellas</small></div>
       <div><b>${o.edad_dias == null ? "—" : fmt.format(o.edad_dias) + " d"}</b><small>antigüedad mediana de las cuentas</small></div>
