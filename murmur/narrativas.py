@@ -32,7 +32,7 @@ RESOLUCION = 1.0
 TASA_RESP_RUIDO = 0.02
 SIM_ASIGNAR = 0.80
 SIM_COORD = 0.55
-FRAG_FRAC, SIM_FRAG = 0.01, 0.5
+FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
 N_EJ, N_VOTOS = 16, 4
 RUIDO_REPETIDO = 20
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
