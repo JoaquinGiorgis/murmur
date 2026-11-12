@@ -35,9 +35,15 @@ SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
 N_EJ, N_VOTOS = 16, 4
 RUIDO_REPETIDO = 20
+# Con pocas respuestas (set con menos conversación que práctica), apagados por defecto hasta validarlos:
+REF_TASA_RESP = 0.1403        # tasa de respuestas de práctica
+TASA_RELATIVA = False         # el umbral de ruido por tasa de respuesta baja en proporción si el set responde menos
+SIM_CAPA_K, SIM_CAPA_MIN = 0, 0.6   # capa de vecinos mutuos entre clusters finos (k=0: apagada); pesa más cuanto menos respuestas
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
+ORIGEN_TOPE = 25   # el umbral crece con el tamaño (frena comentarios mal asignados) pero con tope: una
+                   # narrativa grande que nace lento (29 en 3 h) no queda fechada horas tarde
 
 STOP = set("""a al algo ante asi aun bien cada como con contra cual de del desde donde el ella ellos en entre era es esa ese
 eso esta estan este esto fue ha hace hay la las le les lo los mas me mi muy nada ni no nos o otra otro para pero poco por porque
@@ -117,11 +123,31 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         kk = (min(x, y), max(x, y)); w[kk] += 1; sgn[kk] += 1 if s else -1
     tam = np.bincount(F[F >= 0], minlength=nfc)
     aristas = [e for e in w if w[e] >= ARISTA_MIN]
-    g = ig.Graph(n=nfc, edges=aristas, edge_attrs={"weight": [w[e] for e in aristas]})
+    pesos = [w[e] for e in aristas]
+    tasa = isrep.mean() if N else 0.0
+    falta = float(np.clip((REF_TASA_RESP - tasa) / REF_TASA_RESP, 0, 1))  # 0 con la tasa de práctica o más
+    if SIM_CAPA_K and falta > 0 and nfc > SIM_CAPA_K:
+        # sin respuestas suficientes, clusters finos muy parecidos (vecinos mutuos) también se cosen; estas aristas
+        # no tienen signo, así que no deciden el lado (el 2-coloreo sigue usando solo respuestas)
+        Cf = np.zeros((nfc, E.shape[1]), np.float32)
+        okf = F >= 0
+        np.add.at(Cf, F[okf], E[kid[okf]])
+        Cf /= np.linalg.norm(Cf, axis=1, keepdims=True) + 1e-9
+        Sf = Cf @ Cf.T
+        np.fill_diagonal(Sf, -1)
+        vec = np.argsort(-Sf, axis=1)[:, :SIM_CAPA_K]
+        en = {(i, int(j)) for i in range(nfc) for j in vec[i]}
+        ya = set(aristas)
+        for i, j in en:
+            if i < j and (j, i) in en and Sf[i, j] >= SIM_CAPA_MIN and (i, j) not in ya:
+                aristas.append((i, j)); pesos.append(falta * ARISTA_MIN)
+        log(f"  tasa de respuestas {tasa:.1%}: capa de similitud con peso {falta:.2f}")
+    g = ig.Graph(n=nfc, edges=aristas, edge_attrs={"weight": pesos})
     part = la.find_partition(g, la.RBConfigurationVertexPartition, weights="weight",
                              resolution_parameter=RESOLUCION, seed=1)
     narr = np.array(part.membership)
-    narr[toc / np.maximum(tam, 1) < TASA_RESP_RUIDO] = -1
+    tasa_ruido = TASA_RESP_RUIDO * min(1.0, tasa / REF_TASA_RESP) if TASA_RELATIVA else TASA_RESP_RUIDO
+    narr[toc / np.maximum(tam, 1) < tasa_ruido] = -1
 
     # 2-coloreo con signo (árbol de máximo peso)
     lado = np.zeros(nfc, int)
@@ -255,7 +281,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
             if f1 >= 0.8: apo, metodo = 1, "operación coordinada"
             elif f1 <= 0.2: apo, metodo = -1, "operación coordinada"
         ts = np.sort(gd.ts.values)
-        thr = max(ORIGEN_MIN, int(ORIGEN_FRAC * len(ts)))
+        thr = max(ORIGEN_MIN, min(int(ORIGEN_FRAC * len(ts)), ORIGEN_TOPE))
         j = np.searchsorted(ts, ts + ORIGEN_VENTANA, side="right") - np.arange(len(ts))
         hit = np.nonzero(j >= thr)[0]
         origen = int(ts[hit[0]] if len(hit) else ts[0])
