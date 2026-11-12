@@ -7,10 +7,17 @@ Una *murmuration* es una bandada de miles de estorninos que se mueve como un sol
 ## Cómo correrlo
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 python -m murmur --datos datos/final --entrega entrega
+```
+
+Python 3.10 o más nuevo (medido con 3.11). Las versiones de `requirements.txt` están fijas: son las del puntaje publicado abajo. El modelo de embeddings (unos 470 MB) se baja solo en la primera corrida y después se carga del disco; para correr sin red, bajarlo antes:
+
+```bash
+python -c "from sentence_transformers import SentenceTransformer as S; S('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+HF_HUB_OFFLINE=1 python -m murmur --datos datos/final --entrega entrega
 ```
 
 Un solo comando, de punta a punta. Deja en `entrega/` los cuatro archivos del formato oficial (`comentarios.csv`, `narrativas.csv`, `cuentas.csv` y `costo.json`) y un `dashboard.html` autocontenido: qué circula, desde cuándo y quién lo empuja. Se abre en cualquier navegador, sin servidor.

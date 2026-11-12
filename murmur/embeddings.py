@@ -43,7 +43,11 @@ def embeber(textos: pd.Series, cache_dir: Path, log=print):
         from sentence_transformers import SentenceTransformer
         torch.set_num_threads(max(1, os.cpu_count() or 1))
         t = time.time()
-        m = SentenceTransformer(MODELO, device="cpu")
+        try:  # primero del disco: si el modelo ya está bajado, la corrida no depende de internet
+            m = SentenceTransformer(MODELO, device="cpu", local_files_only=True)
+        except Exception:
+            log(f"  bajando el modelo {MODELO} (solo la primera vez)")
+            m = SentenceTransformer(MODELO, device="cpu")
         V = m.encode([unicos[i] for i in falta], batch_size=256, normalize_embeddings=True, show_progress_bar=False)
         stats["segundos_embeddings"] = round(time.time() - t, 1)
         for i, v in zip(falta, V.astype(np.float16)):
