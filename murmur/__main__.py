@@ -72,6 +72,15 @@ def main():
         tiempos["embeddings"] = round(time.time() - t, 1)
         memoria["embeddings"] = _pico_mb()
 
+        if not os.environ.get("MURMUR_SIN_SATELITES"):
+            try:  # si falla, queda el cuentas.csv del núcleo, que ya está escrito
+                grupos2, ops2, n_sat = coordinacion.sumar_satelites(c, grupos, ops, E, kid, log=log)
+                if n_sat:
+                    grupos2.to_csv(a.entrega / "cuentas.csv", index=False)
+                    grupos, ops = grupos2, ops2
+            except Exception as e:
+                log(f"  AVISO: no se pudieron sumar satélites ({e!r}); queda el núcleo")
+
         log("[4/4] narrativas")
         t = time.time()
         if os.environ.get("ANTHROPIC_API_KEY") and not a.sin_ia:

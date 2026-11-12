@@ -12,6 +12,7 @@ Idea: una ráfaga no alcanza; lo que delata a una operación es la repetición.
    densas (grado interno medio alto). Una operación es un grupo cerrado que
    coincide muchas veces; la opinión genuina forma árboles ralos.
 """
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -96,3 +97,58 @@ def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
     out = pd.DataFrame({"cuenta_id": todas_cuentas.values})
     out["grupo"] = out.cuenta_id.map(grupo).fillna("")
     return out, pd.DataFrame(ops)
+
+
+# --- satélites: cuentas de baja actividad de una operación ya detectada
+SAT_SIM, SAT_PUBS, SAT_FRAC = 0.8, 2, 0.5
+
+
+def sumar_satelites(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, E, kid, log=print):
+    """Suma a cada operación ya detectada las cuentas con 2-5 comentarios que la co-acción no alcanza a ver.
+
+    Una cuenta entra solo si se dan las tres cosas a la vez (cada una por separado no separa campaña de
+    genuinas): (1) en al menos SAT_PUBS publicaciones distintas comenta a menos de VENTANA de un comentario
+    del núcleo, (2) con un texto casi igual al de ese comentario (coseno >= SAT_SIM), y (3) al menos
+    SAT_FRAC de las publicaciones en las que participa coinciden con el núcleo.
+    No crea operaciones nuevas ni toca el núcleo: si no hay núcleo, no hace nada.
+    """
+    g = dict(zip(grupos.cuenta_id, grupos.grupo))
+    grp = c.cuenta_id.map(g).fillna("").values
+    if not (grp != "").any():
+        return grupos, ops, 0
+    nw = c.texto.fillna("").str.split().str.len().values
+    ts = c.ts.values
+    cuenta = c.cuenta_id.values
+    pub = c.publicacion_id.values
+    npub = c.groupby("cuenta_id").publicacion_id.nunique()
+    por_pub = pd.Series(np.arange(len(c))).groupby(pub).apply(lambda s: s.values)
+    mejor = {}   # cuenta -> (publicaciones con texto casi igual, operación)
+    for op in sorted(set(grp) - {""}):
+        cerca, igual = defaultdict(set), defaultdict(set)
+        for p in pd.unique(pub[grp == op]):
+            ii = por_pub[p]
+            nuc = ii[grp[ii] == op]
+            cand = ii[grp[ii] == ""]
+            if not len(cand):
+                continue
+            m = np.abs(ts[cand][:, None] - ts[nuc][None, :]) <= VENTANA
+            fila = m.any(1)
+            if not fila.any():
+                continue
+            S = np.where(m[fila], E[kid[cand[fila]]] @ E[kid[nuc]].T, -1.0)
+            parecido = (S.max(1) >= SAT_SIM) & (nw[cand[fila]] >= 4)
+            for cu, ok in zip(cuenta[cand[fila]], parecido):
+                cerca[cu].add(p)
+                if ok:
+                    igual[cu].add(p)
+        for cu, ps in igual.items():
+            if len(ps) >= SAT_PUBS and len(cerca[cu]) / npub[cu] >= SAT_FRAC and (cu not in mejor or len(ps) > mejor[cu][0]):
+                mejor[cu] = (len(ps), op)
+    if mejor:
+        grupos = grupos.copy()
+        grupos["grupo"] = [mejor[cu][1] if cu in mejor else gr for cu, gr in zip(grupos.cuenta_id, grupos.grupo)]
+        if len(ops):
+            ops = ops.copy()
+            ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
+    log(f"  satélites sumados a operaciones: {len(mejor)}")
+    return grupos, ops, len(mejor)
