@@ -22,7 +22,7 @@ import leidenalg as la
 VENTANA = 600          # segundos
 K_MIN, COS_MIN = 3, 0.15
 K_MIN_REP, COS_MIN_REP = 2, 0.08
-TAM_MIN, GRADO_MIN = 8, 3.0
+TAM_MIN, GRADO_MIN = 8, 2.5   # grado medio del grupo podado; grupos genuinos densos llegan a 2,0, campañas con pocas co-acciones a 2,17-2,77
 PESO_RESP, PODA_FRAC = 3.0, 0.5
 TAM_MAX_FRAC = 0.02   # una "operación" que abarca >2% de las cuentas es la masa de usuarios activos, no una operación
 DENS_MIN = 0.09       # densidad del grupo podado (grado medio / (n-1)): operaciones 0,12-0,32; grupos genuinos <= 0,063

@@ -3,7 +3,7 @@
 Uso:
     python -m murmur --datos datos/final --entrega entrega
 """
-import argparse, json, os, platform, resource, sys, time, traceback
+import argparse, json, os, platform, sys, time, traceback
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -22,7 +22,11 @@ def _hardware():
 
 def _pico_mb():
     """Pico de memoria residente del proceso hasta ahora (MB)."""
-    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    try:  # resource no existe en Windows: ahí se informa 0 en vez de no arrancar
+        import resource
+        r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except Exception:
+        return 0
     return round(r / 2**20 if sys.platform == "darwin" else r / 2**10)
 
 
