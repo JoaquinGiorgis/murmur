@@ -34,8 +34,11 @@ def embeber(textos: pd.Series, cache_dir: Path, log=print):
     cpath = cache_dir / "embeddings.parquet"
     cache = {}
     if cpath.exists():
-        cdf = pd.read_parquet(cpath)
-        cache = dict(zip(cdf.h, cdf.v))
+        try:
+            cdf = pd.read_parquet(cpath)
+            cache = dict(zip(cdf.h, cdf.v))
+        except Exception as e:  # caché rota (p. ej. corrida cortada mientras escribía): se recalcula
+            log(f"  AVISO: caché de embeddings ilegible ({type(e).__name__}); se recalcula")
     falta = [i for i, h in enumerate(hashes) if h not in cache]
     stats = {"textos_unicos": len(unicos), "embebidos_ahora": len(falta), "segundos_embeddings": 0.0}
     if falta:
@@ -52,7 +55,11 @@ def embeber(textos: pd.Series, cache_dir: Path, log=print):
         stats["segundos_embeddings"] = round(time.time() - t, 1)
         for i, v in zip(falta, V.astype(np.float16)):
             cache[hashes[i]] = v
-        pd.DataFrame({"h": list(cache.keys()), "v": list(cache.values())}).to_parquet(cpath)
+        # escritura atómica a un archivo nuevo: un corte a mitad no rompe la caché, y si cpath es un
+        # symlink (banco de estrés) se reemplaza el enlace en vez de escribir sobre la caché original
+        tmp = cpath.with_name(cpath.name + ".tmp")
+        pd.DataFrame({"h": list(cache.keys()), "v": list(cache.values())}).to_parquet(tmp)
+        os.replace(tmp, cpath)
         log(f"  embebidos {len(falta)} textos nuevos en {stats['segundos_embeddings']}s")
     else:
         log("  embeddings: todo en caché")

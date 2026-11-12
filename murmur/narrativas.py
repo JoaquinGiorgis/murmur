@@ -190,7 +190,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         if claves_ns:
             C = np.zeros((len(claves_ns), E.shape[1]), np.float32)
             pos = {k: j for j, k in enumerate(claves_ns)}
-            j_of = np.array([pos[(n, s)] for n, s in zip(cn[asign], cs[asign])])
+            j_of = np.array([pos[(n, s)] for n, s in zip(cn[asign], cs[asign])], dtype=int)
             np.add.at(C, j_of, E[kid[asign]])
             C /= np.linalg.norm(C, axis=1, keepdims=True) + 1e-9
             ii = np.nonzero(es_coord & (cn < 0) & ~isrep & (nw >= MIN_PALABRAS))[0]
@@ -222,7 +222,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
             keys = sorted(set(zip(cn[mask], cs[mask])))
             C = np.zeros((len(keys), E.shape[1]), np.float32)
             pos = {k: j for j, k in enumerate(keys)}
-            np.add.at(C, np.array([pos[k] for k in zip(cn[mask], cs[mask])]), E[kid[mask]])
+            np.add.at(C, np.array([pos[k] for k in zip(cn[mask], cs[mask])], dtype=int), E[kid[mask]])
             return keys, C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)
         kg, Cg = centroides(base & np.isin(cn, list(grandes)))
         kc, Cc = centroides(base & np.isin(cn, list(chicas)))
@@ -260,7 +260,9 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         hit = np.nonzero(j >= thr)[0]
         origen = int(ts[hit[0]] if len(hit) else ts[0])
         filas.append({"n": n, "apo": apo, "metodo_postura": metodo, "origen": origen, "comentarios": len(gd)})
-    nd = pd.DataFrame(filas)
+    nd = pd.DataFrame(filas, columns=["n", "apo", "metodo_postura", "origen", "comentarios"])
+    if nd.empty:
+        raise RuntimeError("no quedó ninguna narrativa (¿el set casi no tiene respuestas?)")
 
     # títulos y frases clave sin IA: c-TF-IDF sobre el lado que afirma + texto más central
     apo_map = dict(zip(nd.n, nd.apo))
@@ -314,7 +316,11 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
             for k in range(N_VOTOS):
                 invertido = k % 2 == 1
                 A, B = (ej(pb, k), ej(pa, k)) if invertido else (ej(pa, k), ej(pb, k))
-                res = llm.juzgar(A, B, uso_ia)
+                try:
+                    res = llm.juzgar(A, B, uso_ia)
+                except Exception as e:  # una respuesta rara de la API no tumba la corrida
+                    log(f"  IA: respuesta inesperada ({e!r}); sigo")
+                    res = None
                 if not res:
                     continue
                 elige_a = res["lado"] == "A"
@@ -442,8 +448,14 @@ class LLM:
                 self._cortar(f"{self.seguidos} llamadas seguidas sin respuesta")
             return None
         self.seguidos = 0
-        u = r.get("usage", {})
-        ti, to = u.get("input_tokens", 0), u.get("output_tokens", 0)
+        if not isinstance(r, dict):
+            self.fallos += 1
+            return None
+        try:
+            u = r.get("usage") or {}
+            ti, to = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
+        except Exception:
+            ti = to = 0
         uso["tokens"] += ti + to; uso["llamadas"] += 1
         uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
         try:

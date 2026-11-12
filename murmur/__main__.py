@@ -3,7 +3,7 @@
 Uso:
     python -m murmur --datos datos/final --entrega entrega
 """
-import argparse, json, os, platform, resource, sys, time
+import argparse, json, os, platform, resource, sys, time, traceback
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -43,34 +43,52 @@ def main():
 
     log("[1/4] ingesta en DuckDB")
     t = time.time()
-    con = datos.cargar(a.datos, a.cache / "murmur.duckdb")
+    con = datos.cargar(a.datos, a.cache / "murmur.duckdb", log=log)
     c = datos.comentarios_df(con)
     cuentas = con.execute("SELECT cuenta_id FROM cuentas ORDER BY cuenta_id").df().cuenta_id
     log(f"  {len(c)} comentarios, {len(cuentas)} cuentas")
     tiempos["ingesta"] = round(time.time() - t, 1)
     memoria["ingesta"] = _pico_mb()
+    errores = []
 
     log("[2/4] coordinación")
     t = time.time()
-    grupos, ops = coordinacion.detectar(c, cuentas, log=log)
+    try:
+        grupos, ops = coordinacion.detectar(c, cuentas, log=log)
+    except Exception as e:  # la tarea B nunca tumba a la A (ni al revés)
+        log(f"  ERROR en coordinación: {e!r}; se entrega sin cuentas marcadas")
+        traceback.print_exc()
+        errores.append(f"coordinación: {e!r}")
+        grupos, ops = pd.DataFrame({"cuenta_id": cuentas.values, "grupo": ""}), pd.DataFrame()
+    grupos.to_csv(a.entrega / "cuentas.csv", index=False)   # se escribe ya: no depende de narrativas
     tiempos["coordinacion"] = round(time.time() - t, 1)
     memoria["coordinacion"] = _pico_mb()
 
-    log("[3/4] embeddings")
-    t = time.time()
-    E, kid, _, est = embeddings.embeber(c.texto, a.cache, log=log)
-    tiempos["embeddings"] = round(time.time() - t, 1)
-    memoria["embeddings"] = _pico_mb()
+    llm, uso, est = None, {"tokens": 0, "usd": 0.0, "llamadas": 0}, {"textos_unicos": 0}
+    try:
+        log("[3/4] embeddings")
+        t = time.time()
+        E, kid, _, est = embeddings.embeber(c.texto, a.cache, log=log)
+        tiempos["embeddings"] = round(time.time() - t, 1)
+        memoria["embeddings"] = _pico_mb()
 
-    log("[4/4] narrativas")
-    t = time.time()
-    llm = None
-    if os.environ.get("ANTHROPIC_API_KEY") and not a.sin_ia:
-        llm = narrativas.LLM(log=log)
-        log(f"  IA activada ({llm.modelo}) para elegir postura y nombrar narrativas")
-    df, nd, uso = narrativas.narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
-    tiempos["narrativas"] = round(time.time() - t, 1)
-    memoria["narrativas"] = _pico_mb()
+        log("[4/4] narrativas")
+        t = time.time()
+        if os.environ.get("ANTHROPIC_API_KEY") and not a.sin_ia:
+            llm = narrativas.LLM(log=log)
+            log(f"  IA activada ({llm.modelo}) para elegir postura y nombrar narrativas")
+        df, nd, uso = narrativas.narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
+        tiempos["narrativas"] = round(time.time() - t, 1)
+        memoria["narrativas"] = _pico_mb()
+    except Exception as e:
+        log(f"  ERROR en narrativas: {e!r}; se entrega todo como ruido para no perder la coordinación")
+        traceback.print_exc()
+        errores.append(f"narrativas: {e!r}")
+        df = pd.DataFrame({"comentario_id": c.comentario_id.values, "narrativa": "ninguna", "postura": "",
+                           "n": -1, "s": 0, "ts": c.ts.values, "texto": c.texto.values,
+                           "cuenta_id": c.cuenta_id.values})
+        nd = pd.DataFrame(columns=["n", "narrativa", "titulo", "frases_clave", "fecha_origen",
+                                   "comentarios", "metodo_postura", "apo", "origen"])
 
     # --- entrega
     df[["comentario_id", "narrativa", "postura"]].to_csv(a.entrega / "comentarios.csv", index=False)
@@ -78,22 +96,6 @@ def main():
     out_n["frases_clave"] = out_n.frases_clave.map(
         lambda l: "|".join(map(str, l)) if isinstance(l, (list, tuple)) else ("" if l is None else str(l)))
     out_n.to_csv(a.entrega / "narrativas.csv", index=False)
-    grupos.to_csv(a.entrega / "cuentas.csv", index=False)
-
-    # --- resultados también a DuckDB (para el dashboard y para consultar)
-    con.register("r_com", df[["comentario_id", "narrativa", "postura"]])
-    con.register("r_nar", out_n.merge(nd[["narrativa", "comentarios", "metodo_postura"]], on="narrativa"))
-    con.register("r_cue", grupos)
-    con.execute("CREATE OR REPLACE TABLE res_comentarios AS SELECT * FROM r_com")
-    con.execute("CREATE OR REPLACE TABLE res_narrativas AS SELECT * FROM r_nar")
-    con.execute("CREATE OR REPLACE TABLE res_cuentas AS SELECT * FROM r_cue")
-    info = con.execute("SELECT cuenta_id, fecha_creacion, seguidores FROM cuentas").df()
-    con.close()
-
-    a.dashboard.parent.mkdir(parents=True, exist_ok=True)
-    dashboard.generar(df, nd, grupos, ops, info, {
-        "comentarios": len(c), "cuentas_marcadas": int((grupos.grupo != "").sum()),
-        "segundos": round(time.time() - t0, 1), "usd": round(uso["usd"], 4)}, a.dashboard)
 
     seg = round(time.time() - t0, 1)
     n = len(c)
@@ -109,11 +111,34 @@ def main():
         "notas": (f"embeddings locales ({embeddings.MODELO.split('/')[-1]}) sobre {est['textos_unicos']} textos únicos; "
                   f"IA {'solo para elegir postura y nombrar narrativas (' + str(uso['llamadas']) + ' llamadas)' if uso['llamadas'] else 'no usada'}; "
                   + (f"IA con fallos ({llm.fallos} llamadas{', ' + llm.abortado if llm.abortado else ''}): esas narrativas usan postura heurística; "
-                     if llm is not None and (llm.fallos or llm.abortado) else "") +
+                     if llm is not None and (llm.fallos or llm.abortado) else "")
+                  + (f"ERRORES: {'; '.join(errores)}; " if errores else "") +
                   f"tiempos por etapa (s): {tiempos}; pico de memoria acumulado al terminar cada etapa (MB): {memoria}"),
     }
     (a.entrega / "costo.json").write_text(json.dumps(costo, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # --- extras (base de resultados y dashboard): si fallan, la entrega ya está escrita
+    try:
+        con.register("r_com", df[["comentario_id", "narrativa", "postura"]])
+        con.register("r_nar", out_n.merge(nd[["narrativa", "comentarios", "metodo_postura"]], on="narrativa"))
+        con.register("r_cue", grupos)
+        con.execute("CREATE OR REPLACE TABLE res_comentarios AS SELECT * FROM r_com")
+        con.execute("CREATE OR REPLACE TABLE res_narrativas AS SELECT * FROM r_nar")
+        con.execute("CREATE OR REPLACE TABLE res_cuentas AS SELECT * FROM r_cue")
+        info = con.execute("SELECT cuenta_id, fecha_creacion, seguidores FROM cuentas").df()
+        con.close()
+        a.dashboard.parent.mkdir(parents=True, exist_ok=True)
+        dashboard.generar(df, nd, grupos, ops, info, {
+            "comentarios": len(c), "cuentas_marcadas": int((grupos.grupo != "").sum()),
+            "segundos": round(time.time() - t0, 1), "usd": round(uso["usd"], 4)}, a.dashboard)
+    except Exception as e:
+        log(f"  AVISO: no se pudo generar el dashboard o las tablas res_*: {e!r} (la entrega está completa)")
+        traceback.print_exc()
+
     log(f"listo en {seg}s (pico de memoria {_pico_mb()} MB) -> {a.entrega}/  dashboard: {a.dashboard}")
+    if errores:
+        log("ATENCIÓN: la entrega se completó con errores: " + " | ".join(errores))
+        sys.exit(2)
 
 
 if __name__ == "__main__":
