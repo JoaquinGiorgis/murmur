@@ -113,7 +113,7 @@ def correr(nombre: str, datos: Path, etiqueta: str) -> dict:
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     t = time.time()
     r = subprocess.run([sys.executable, "-m", "murmur", "--datos", str(datos), "--entrega", str(out),
-                        "--cache", str(cache), "--sin-ia"], cwd=RAIZ, env=env, capture_output=True, text=True)
+                        "--cache", str(cache), "--dashboard", str(out / "dashboard.html"), "--sin-ia"], cwd=RAIZ, env=env, capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError(f"{nombre}: murmur falló\n{r.stderr[-2000:]}")
     seg = time.time() - t

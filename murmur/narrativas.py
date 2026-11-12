@@ -364,8 +364,8 @@ class LLM:
     def __init__(self, log=print):
         self.key = os.environ["ANTHROPIC_API_KEY"]
         self.modelo = os.environ.get("MURMUR_LLM_MODELO", "claude-haiku-5-5")
-        self.usd_in = float(os.environ.get("MURMUR_USD_MTOK_IN", "1.0"))
-        self.usd_out = float(os.environ.get("MURMUR_USD_MTOK_OUT", "5.0"))
+        self.usd_in = float(os.environ.get("MURMUR_USD_MTOK_IN", "0.10"))
+        self.usd_out = float(os.environ.get("MURMUR_USD_MTOK_OUT", "0.50"))
         self.log = log
         self.fallos = 0             # llamadas que terminaron sin respuesta usable
         self.seguidos = 0
