@@ -18,7 +18,8 @@
 5. Origen: primer momento en que la narrativa junta un volumen sostenido en 3 h
    (no el primer comentario suelto, que suele ser un error de asignación).
 """
-import heapq, json, os, random, re, time, unicodedata, urllib.error, urllib.request
+import heapq, json, os, random, re, threading, time, unicodedata, urllib.error, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -33,6 +34,7 @@ TASA_RESP_RUIDO = 0.02
 SIM_ASIGNAR = 0.80
 SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
+IA_PARALELO = 4   # llamadas a la IA simultáneas (los 429 se reintentan con espera)
 N_EJ, N_VOTOS = 16, 8   # 8 votos: con 4, una narrativa dudosa (la IA erra 1 de cada 4) salía mal ~1 de cada 20 corridas
 RUIDO_REPETIDO = 20
 RUIDO_REP_ESCALA = True       # el umbral de repeticiones crece con el volumen (nunca baja de 20): calibrado para ~200k
@@ -306,37 +308,46 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
 
     uso_ia = {"tokens": 0, "usd": 0.0, "llamadas": 0}
     if llm is not None:
+        def ej(p, k):
+            # ejemplos limpios: sin muletillas ni emojis, que confunden ("hay trabajo... Vergüenza.")
+            out = []
+            for t in p.sample(frac=1, random_state=k):
+                t2 = _limpiar_titulo(t, muletillas)
+                if len(t2.split()) >= 4 and t2 not in out:
+                    out.append(t2)
+                if len(out) == N_EJ:
+                    break
+            return out
+        # 1) armar todas las preguntas: varias por narrativa, alternando qué grupo va primero (sesgo de posición)
+        tareas = []
         for i, r in nd.iterrows():
             gd = df[(df.n == r.n) & ~df.rep]
             pa = gd[gd.s == 1].texto.drop_duplicates()
             pb = gd[gd.s == -1].texto.drop_duplicates()
             if len(pa) < 3 or len(pb) < 3:
                 continue
-            def ej(p, k):
-                # ejemplos limpios: sin muletillas ni emojis, que confunden ("hay trabajo... Vergüenza.")
-                out = []
-                for t in p.sample(frac=1, random_state=k):
-                    t2 = _limpiar_titulo(t, muletillas)
-                    if len(t2.split()) >= 4 and t2 not in out:
-                        out.append(t2)
-                    if len(out) == N_EJ:
-                        break
-                return out
-            votos, respuestas = [], []
-            # varias preguntas alternando qué grupo va primero (el modelo tiene sesgo de posición); gana la mayoría
             for k in range(N_VOTOS):
                 invertido = k % 2 == 1
                 A, B = (ej(pb, k), ej(pa, k)) if invertido else (ej(pa, k), ej(pb, k))
-                try:
-                    res = llm.juzgar(A, B, uso_ia)
-                except Exception as e:  # una respuesta rara de la API no tumba la corrida
-                    log(f"  IA: respuesta inesperada ({e!r}); sigo")
-                    res = None
-                if not res:
-                    continue
-                elige_a = res["lado"] == "A"
-                votos.append(1 if elige_a != invertido else -1)
-                respuestas.append(res)
+                tareas.append((i, invertido, A, B))
+
+        def preguntar(t):
+            try:
+                return llm.juzgar(t[2], t[3], uso_ia)
+            except Exception as e:  # una respuesta rara de la API no tumba la corrida
+                log(f"  IA: respuesta inesperada ({e!r}); sigo")
+                return None
+        # 2) hacerlas en paralelo (el orden de los resultados es el de las tareas: el voto no depende de quién termina antes)
+        with ThreadPoolExecutor(IA_PARALELO) as ex:
+            resultados = list(ex.map(preguntar, tareas))
+        # 3) contar votos por narrativa
+        por_narr = defaultdict(list)
+        for (i, invertido, _, _), res in zip(tareas, resultados):
+            if res:
+                por_narr[i].append((1 if (res["lado"] == "A") != invertido else -1, res))
+        for i, r in nd.iterrows():
+            votos = [v for v, _ in por_narr.get(i, [])]
+            respuestas = [rr for _, rr in por_narr.get(i, [])]
             if votos and sum(votos) != 0:
                 apo = 1 if sum(votos) > 0 else -1
                 nd.loc[i, "apo"] = apo
@@ -388,6 +399,7 @@ class LLM:
         self.seguidos = 0
         self.perdido = 0.0          # segundos gastados en intentos fallidos
         self.abortado = ""          # motivo si se dejó de usar la IA
+        self.lock = threading.Lock()  # las llamadas van en paralelo: los contadores se actualizan de a una
 
     def _cortar(self, motivo):
         if not self.abortado:
@@ -425,13 +437,15 @@ class LLM:
                 motivo = f"HTTP {e.code}"
             except Exception as e:  # timeout, conexión cortada, DNS
                 pausa, motivo = espera, type(e).__name__
-            self.perdido += time.time() - t0
+            with self.lock:
+                self.perdido += time.time() - t0
             if self.perdido >= self.PRESUPUESTO_S:
                 self._cortar(f"{self.perdido:.0f}s perdidos en fallos de la API ({motivo})")
                 return None
             if intento + 1 < self.REINTENTOS:
                 pausa = min(pausa, 60.0, self.PRESUPUESTO_S - self.perdido) * (0.75 + 0.5 * random.random())
-                self.perdido += pausa
+                with self.lock:
+                    self.perdido += pausa
                 self.log(f"  IA: {motivo}, reintento {intento + 1}/{self.REINTENTOS - 1} en {pausa:.0f}s")
                 time.sleep(pausa)
                 espera = min(espera * 2, 30.0)
@@ -453,22 +467,27 @@ class LLM:
         body = json.dumps({"model": self.modelo, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}).encode()
         r = self._post(body)
         if r is None:
-            self.fallos += 1
-            self.seguidos += 1
-            if self.seguidos >= self.CORTE_SEGUIDOS:
+            with self.lock:
+                self.fallos += 1
+                self.seguidos += 1
+                corta = self.seguidos >= self.CORTE_SEGUIDOS
+            if corta:
                 self._cortar(f"{self.seguidos} llamadas seguidas sin respuesta")
             return None
-        self.seguidos = 0
+        with self.lock:
+            self.seguidos = 0
         if not isinstance(r, dict):
-            self.fallos += 1
+            with self.lock:
+                self.fallos += 1
             return None
         try:
             u = r.get("usage") or {}
             ti, to = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
         except Exception:
             ti = to = 0
-        uso["tokens"] += ti + to; uso["llamadas"] += 1
-        uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
+        with self.lock:
+            uso["tokens"] += ti + to; uso["llamadas"] += 1
+            uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
         try:
             txt = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
             j = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
@@ -476,5 +495,6 @@ class LLM:
                 return j
         except Exception:
             pass
-        self.fallos += 1
+        with self.lock:
+            self.fallos += 1
         return None
