@@ -46,11 +46,11 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 |---|---|---|---|
 | Agrupamiento de narrativas (B-cubed F1) | 0,35 | 0,995 | **0,995** |
 | Detección de ruido (F1) | 0,67 | 0,995 | **0,995** |
-| Postura (macro-F1) | 0,49 | 0,871 | **0,997** |
+| Postura (macro-F1) | 0,49 | 0,871 | **0,998** |
 | Origen de emergentes | 0,33 | 1,00 | **1,00** |
 | Cuentas coordinadas (F1) | 0,12 | 1,000 | **1,000** (115 de 115, precisión 1,0) |
 | Agrupamiento de operaciones (B-cubed F1) | 0,28 | 1,000 | **1,000** |
-| **Total automático** | **16,8 / 55** | **54,14 / 55** | **54,89 / 55** |
+| **Total automático** | **16,8 / 55** | **54,14 / 55** | **54,90 / 55** |
 
 Costo en IA: **USD 0** sin IA, **USD 0,03** con IA (104 llamadas a Claude Haiku 5.5 y 165.000 tokens para 200.000 comentarios: menos de dos décimas de centavo de dólar cada mil comentarios). Etiquetar cada comentario con IA costaría cientos de veces más; acá se paga por narrativa, no por comentario. Medido con versiones fijas desde un clon limpio y sin red.
 
