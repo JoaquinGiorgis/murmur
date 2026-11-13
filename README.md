@@ -15,7 +15,7 @@ pip install -r requirements.txt
 python -m murmur --datos datos/final --entrega entrega
 ```
 
-Python 3.10 o más nuevo (medido con 3.11). Las versiones de `requirements.txt` están fijas: son las del puntaje publicado abajo. El modelo de embeddings (unos 470 MB) se baja solo en la primera corrida y después se carga del disco; para correr sin red, bajarlo antes:
+Los datos del desafío no vienen en el repo: poné el set en `datos/final/` (o pasá otra carpeta con `--datos`). Python 3.10 o más nuevo (medido con 3.11). Las versiones de `requirements.txt` están fijas: son las del puntaje publicado abajo. El modelo de embeddings (unos 470 MB) se baja solo en la primera corrida y después se carga del disco; para correr sin red, bajarlo antes:
 
 ```bash
 python -c "from sentence_transformers import SentenceTransformer as S; S('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
@@ -139,6 +139,8 @@ Además lo corrimos sobre variantes del set con cambios de forma y de contenido 
 | Fechas `dd/mm/aaaa` | corta con un mensaje claro que pide fechas ISO 8601 | — | — |
 
 Sin respuestas no hay con qué coser los clusters en narrativas, así que salen muchas y chicas, aunque la coordinación sigue funcionando. Con el tiempo estirado al doble, las ráfagas de 12 minutos pasan a 24 y parte de las coincidencias cae fuera de la ventana de 10 minutos.
+
+**Reproducibilidad, medida:** desde un clon limpio del repo, sin IA y sin red, el set final da `cuentas.csv` idéntico byte a byte a la entrega con IA, las mismas narrativas en los 150.000 comentarios, las mismas fechas de origen y la misma postura en las 12 narrativas; solo cambian los títulos, que sin IA salen del texto más frecuente.
 
 La ingesta también acepta `.csv` sin comprimir, columnas faltantes (avisa), texto en latin-1 (lo detecta y lo relee) y comillas mal cerradas sin perder filas, y compara cuántas filas leyó contra el archivo. Si una etapa falla, la otra se entrega igual: los cuatro archivos siempre se escriben, y el proceso termina con código 2 y un aviso visible.
 
