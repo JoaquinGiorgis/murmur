@@ -360,6 +360,8 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
                 fc = [str(x).replace("|", " ").strip() for x in fc if str(x).strip()]
                 if fc:
                     nd.at[i, "frases_clave"] = fc[:6]
+        if llm.cortes:
+            log(f"  IA diagnóstico: stop_reason {dict(llm.cortes)}, con razonamiento {llm.pensadas}")
         if llm.fallos or llm.abortado:
             log(f"  AVISO IA: {llm.fallos} llamadas fallidas{' — ' + llm.abortado if llm.abortado else ''}; "
                 f"las narrativas sin votos usan la postura heurística")
@@ -400,6 +402,8 @@ class LLM:
         self.perdido = 0.0          # segundos gastados en intentos fallidos
         self.abortado = ""          # motivo si se dejó de usar la IA
         self.lock = threading.Lock()  # las llamadas van en paralelo: los contadores se actualizan de a una
+        self.cortes = defaultdict(int)  # diagnóstico: stop_reason de cada respuesta (solo se informa, no decide nada)
+        self.pensadas = 0               # respuestas que trajeron bloques de razonamiento (gastan max_tokens)
 
     def _cortar(self, motivo):
         if not self.abortado:
@@ -486,6 +490,9 @@ class LLM:
         except Exception:
             ti = to = 0
         with self.lock:
+            self.cortes[str(r.get("stop_reason"))] += 1
+            if any(isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking") for b in r.get("content") or []):
+                self.pensadas += 1
             uso["tokens"] += ti + to; uso["llamadas"] += 1
             uso["usd"] += ti / 1e6 * self.usd_in + to / 1e6 * self.usd_out
         try:
