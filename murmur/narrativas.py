@@ -54,6 +54,9 @@ FRAG_VECINO = True    # True: el fragmento se une al lado de la narrativa grande
 ORIGEN_INICIO = True  # True: si desde la ventana que dispara el umbral se llega hacia atrás, sin silencios de más de
                       # ORIGEN_VENTANA, hasta las primeras ORIGEN_VENTANA del set, la narrativa ya estaba activa cuando empiezan
                       # los datos y su origen es su primer comentario (el umbral tarda en juntarse de madrugada)
+COORD_RESTO = True    # True: los comentarios raíz sin cluster de cuentas coordinadas también pasan por RESTO_VECINO (voto del
+                      # hilo o texto más parecido) en vez de depender solo de SIM_COORD, que deja como ruido las consignas
+                      # que no llegan a 0,55 contra el promedio del lado; el lado es el que esa operación ya empuja ahí
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
@@ -283,7 +286,13 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
     if RESTO_VECINO:
         # lo de las cuentas coordinadas sigue por su propio camino (SIM_COORD, más abajo), que mira el lado completo
         de_op = c.cuenta_id.isin(set(grupos.cuenta_id[grupos.grupo != ""])).values if grupos is not None else np.zeros(N, bool)
-        resto = np.nonzero((~isrep) & (cn < 0) & (F < 0) & (nw >= 4) & ~nk & ~de_op)[0]
+        resto = np.nonzero((~isrep) & (cn < 0) & (F < 0) & (nw >= 4) & ~nk & (COORD_RESTO | ~de_op))[0]
+        lado_op = {}
+        if COORD_RESTO and de_op.any():   # lado que cada operación ya empuja en cada narrativa (comentarios raíz ya asignados)
+            op_de = c.cuenta_id.map(dict(zip(grupos.cuenta_id, grupos.grupo))).fillna("").values
+            ya_op = np.nonzero(de_op & ~isrep & (cn >= 0))[0]
+            suma = pd.Series(cs[ya_op]).groupby([op_de[ya_op], cn[ya_op]]).sum()
+            lado_op = {k: (1 if v > 0 else -1) for k, v in suma.items() if v != 0}
         if len(resto):
             kid_ruidoso = np.zeros(len(E), bool); kid_ruidoso[kid[nk]] = True
             con_cl = lab_kid >= 0
@@ -317,6 +326,8 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
                     gana[i0:i0 + paso] = S.max(1) > sz
                 f = lab_kid[mejor[inv]]; ok = gana[inv]
                 cn[sin_voto[ok]] = narr[f[ok]]; cs[sin_voto[ok]] = lado[f[ok]]
+            for i in (resto[de_op[resto] & (cn[resto] >= 0)] if lado_op else []):
+                cs[i] = lado_op.get((op_de[i], cn[i]), cs[i])
             extra[resto] = cn[resto] >= 0
             log(f"  resto sin cluster: {len(resto)}; con voto de hilo {len(resto) - len(sin_voto)}, quedan como ruido {int((cn[resto] < 0).sum())}")
 
