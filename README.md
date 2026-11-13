@@ -130,10 +130,10 @@ Además lo corrimos sobre variantes del set con cambios de forma y de contenido 
 
 | Variante | Puntaje | Cuentas de campaña encontradas | Narrativas (encontradas / reales) |
 |---|---|---|---|
-| Fechas corridas 150 días y en UTC (`Z`) | 54,14 | 115 / 115 | 13 / 13 |
-| Ids nuevos no secuenciales y filas mezcladas | 54,12 | 115 / 115 | 13 / 13 |
-| CSV sucio: textos vacíos, filas duplicadas, respuestas a ids inexistentes, fechas ilegibles, cuentas faltantes, columnas extra, CRLF | 53,42 | 115 / 115 | 13 / 13 |
-| Mitad de las respuestas / 35% / 20% | 53,57 / 53,38 / 51,21 | 113 / 114 / 112 de 115 | 14 / 14 / 17 de 13 |
+| Fechas corridas 150 días y en UTC (`Z`) | 54,16 | 115 / 115 | 13 / 13 |
+| Ids nuevos no secuenciales y filas mezcladas | 54,14 | 115 / 115 | 13 / 13 |
+| CSV sucio: textos vacíos, filas duplicadas, respuestas a ids inexistentes, fechas ilegibles, cuentas faltantes, columnas extra, CRLF | 53,44 | 115 / 115 | 13 / 13 |
+| Mitad de las respuestas / 35% / 20% | 53,73 / 53,40 / 51,21 | 114 / 114 / 112 de 115 | 14 / 14 / 16 de 13 |
 | Unos 150.000 comentarios en 28 días con otra mezcla de temas (menos litio, tiempo estirado al doble) | 47,53 | 74 / 113 | 13 / 13 |
 | Sin ninguna respuesta | 32,84 (no se cae) | 106 / 115 | 135 / 13 |
 | Fechas `dd/mm/aaaa` | corta con un mensaje claro que pide fechas ISO 8601 | — | — |
