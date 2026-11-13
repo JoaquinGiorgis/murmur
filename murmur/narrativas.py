@@ -46,6 +46,7 @@ TASA_RELATIVA = True          # si el set responde menos que práctica, el umbra
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
 RUIDO_HILO = 0.0      # 0 = apagado. Un cluster fino pasa a ruido si la parte de sus comentarios que está en un hilo (es
                       # respuesta o recibió respuesta) es menor que RUIDO_HILO veces la del set entero (relativo, no absoluto)
+FRAG_RESPUESTAS = True   # True: una narrativa chica hecha solo de respuestas (sin raíces) también se une a una grande
 FRAG_VARIANTES = 3    # con FRAG_VECINO: cuántas variantes parecidas de un mismo lado se promedian (1 = la más parecida sola)
 FRAG_VECINO = True    # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
                       # parecida, no al promedio de todo el lado: el promedio de una narrativa grande y variada queda lejos
@@ -128,18 +129,18 @@ def clusters_finos(E, nw_por_kid, seed=42, log=print):
 
 def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     """Punto de entrada. Con ANCLA_POSTURA y alguna opción de asignación prendida corre dos pasadas (UMAP una sola vez)."""
-    global RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE
-    opciones = (RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE)
+    global RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS
+    opciones = (RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS)
     if not (ANCLA_POSTURA and any(opciones)):
         return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
     nw = c.texto.fillna("").str.split().str.len().values
     nw_kid = np.zeros(len(E)); np.maximum.at(nw_kid, kid, nw)
     lab_kid = clusters_finos(E, nw_kid, log=log)
     try:
-        RESTO_VECINO = PARTIR_MIXTOS = FRAG_VECINO = HILO_RESCATE = False
+        RESTO_VECINO = PARTIR_MIXTOS = FRAG_VECINO = HILO_RESCATE = FRAG_RESPUESTAS = False
         df0, _, _ = _narrativas(c, E, kid, grupos=grupos, log=lambda s: None, llm=None, _lab=lab_kid)
     finally:
-        RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE = opciones
+        RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS = opciones
     ancla = np.where(df0.postura.values == "apoya", 1, np.where(df0.postura.values == "rechaza", -1, 0))
     return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm, _lab=lab_kid, _ancla=ancla)
 
@@ -386,7 +387,13 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
                 claves_v = [(int(a), int(b)) for a, b in zip(dom.n, dom.s)]
                 kg = sorted(set(claves_v))
                 Cg = None
-        kc, Cc = centroides(base & np.isin(cn, list(chicas)))
+        m_ch = np.isin(cn, list(chicas))
+        if FRAG_RESPUESTAS:   # un lado de una narrativa chica hecho solo de respuestas no tiene raíces: sin esto nunca se fusiona
+            con_raiz = set(zip(cn[base & m_ch], cs[base & m_ch]))
+            sin_raiz = m_ch & np.array([(a, b) not in con_raiz for a, b in zip(cn, cs)])
+            kc, Cc = centroides((base & m_ch) | sin_raiz)
+        else:
+            kc, Cc = centroides(base & m_ch)
         if Cg is not None:
             S = Cc @ Cg.T
         else:
