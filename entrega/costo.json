@@ -1,0 +1,24 @@
+{
+  "comentarios_procesados": 150000,
+  "segundos": 146.8,
+  "tokens_ia": 147855,
+  "usd_ia": 0.029,
+  "usd_por_mil_comentarios": 0.000193,
+  "memoria_pico_mb": 2249,
+  "llamadas_ia": 96,
+  "tiempos_s": {
+    "ingesta": 0.8,
+    "coordinacion": 1.3,
+    "embeddings": 1.6,
+    "narrativas": 141.3
+  },
+  "memoria_mb_por_etapa": {
+    "ingesta": 461,
+    "coordinacion": 943,
+    "embeddings": 1593,
+    "narrativas": 2249
+  },
+  "hardware": "Darwin arm64, 8 CPU, 16 GB RAM, sin GPU",
+  "almacenamiento": "DuckDB local (archivo único) + Parquet para caché de embeddings",
+  "notas": "embeddings locales (paraphrase-multilingual-MiniLM-L12-v2) sobre 53434 textos únicos; IA solo para elegir postura y nombrar narrativas (96 llamadas); tiempos por etapa (s): {'ingesta': 0.8, 'coordinacion': 1.3, 'embeddings': 1.6, 'narrativas': 141.3}; pico de memoria acumulado al terminar cada etapa (MB): {'ingesta': 461, 'coordinacion': 943, 'embeddings': 1593, 'narrativas': 2249}"
+}
