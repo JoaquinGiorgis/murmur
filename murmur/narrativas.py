@@ -44,6 +44,25 @@ REF_TASA_RESP = 0.1403        # tasa de respuestas de práctica
 TASA_RELATIVA = True          # si el set responde menos que práctica, el umbral de ruido por tasa de respuesta baja en
                               # proporción (nunca sube): con pocas respuestas, menos clusters genuinos quedan como ruido
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
+RUIDO_HILO = 0.0      # 0 = apagado. Un cluster fino pasa a ruido si la parte de sus comentarios que está en un hilo (es
+                      # respuesta o recibió respuesta) es menor que RUIDO_HILO veces la del set entero (relativo, no absoluto)
+FRAG_VECINO = False   # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
+                      # parecida, no al promedio de todo el lado: el promedio de una narrativa grande y variada queda lejos
+                      # de cada variante y una narrativa chica y compacta del mismo tema se la lleva
+PARTIR_MIXTOS = False # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
+                      # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
+                      # votan y los demás siguen al compañero de cluster con votos que más se les parece
+RUIDO_LETRAS = False  # True: la clave del texto repetido ignora letras traspuestas dentro de cada palabra ('Alguein' = 'Alguien'):
+                      # las variantes con errores de tipeo de un aviso repetido que nadie contesta también son ruido
+ANCLA_POSTURA = False # True: con alguna de las opciones de abajo prendidas, el lado que 'apoya' sin IA se decide igual que
+                      # sin ellas (primera pasada, sin IA) y se traslada por solapamiento: en narrativas 50/50 el 'lado mayor'
+                      # depende de un puñado de comentarios y cualquier mejora de asignación lo daba vuelta al azar
+RESTO_VECINO = True   # True: los comentarios raíz que HDBSCAN dejó sin cluster y no entraron por SIM_ASIGNAR no van a ruido
+                      # por descarte. Si el texto no es ruido conocido (repetido que nadie contesta), toma la narrativa que
+                      # votan las respuestas largas a ese mismo texto; si no tiene, la del texto con cluster más parecido,
+                      # siempre que se parezca más a una narrativa que al ruido conocido. Sin umbral de similitud.
+HILO_RESCATE = False  # True: un comentario raíz sin cluster que recibió respuestas no es ruido (el ruido no se contesta):
+                      # toma la narrativa que votan sus respuestas largas o, si no hay, la del cluster más parecido
 ORIGEN_VENTANA = 3 * 3600
 ORIGEN_MIN, ORIGEN_FRAC = 10, 0.005
 ORIGEN_TOPE = 25   # el umbral crece con el tamaño (frena comentarios mal asignados) pero con tope: una
@@ -62,6 +81,10 @@ def _k2(t):
     t = re.sub(r"[^a-z ]+", " ", t)
     t = re.sub(r"(.)\1+", r"\1", t)
     return " ".join(sorted(t.split()))
+
+
+def _k3(t):
+    return " ".join(sorted("".join(sorted(w)) for w in _k2(t).split()))
 
 
 def _tokens(t):
@@ -103,10 +126,28 @@ def clusters_finos(E, nw_por_kid, seed=42, log=print):
 
 
 def narrativas(c, E, kid, grupos=None, log=print, llm=None):
-    N = len(c)
+    """Punto de entrada. Con ANCLA_POSTURA y alguna opción de asignación prendida corre dos pasadas (UMAP una sola vez)."""
+    global RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE
+    opciones = (RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE)
+    if not (ANCLA_POSTURA and any(opciones)):
+        return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
     nw = c.texto.fillna("").str.split().str.len().values
     nw_kid = np.zeros(len(E)); np.maximum.at(nw_kid, kid, nw)
     lab_kid = clusters_finos(E, nw_kid, log=log)
+    try:
+        RESTO_VECINO = PARTIR_MIXTOS = FRAG_VECINO = HILO_RESCATE = False
+        df0, _, _ = _narrativas(c, E, kid, grupos=grupos, log=lambda s: None, llm=None, _lab=lab_kid)
+    finally:
+        RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE = opciones
+    ancla = np.where(df0.postura.values == "apoya", 1, np.where(df0.postura.values == "rechaza", -1, 0))
+    return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm, _lab=lab_kid, _ancla=ancla)
+
+
+def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=None):
+    N = len(c)
+    nw = c.texto.fillna("").str.split().str.len().values
+    nw_kid = np.zeros(len(E)); np.maximum.at(nw_kid, kid, nw)
+    lab_kid = clusters_finos(E, nw_kid, log=log) if _lab is None else _lab
     F = lab_kid[kid]
     nfc = max(F.max() + 1, 1)
 
@@ -135,6 +176,11 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     narr = np.array(part.membership)
     tasa_ruido = TASA_RESP_RUIDO * min(1.0, tasa / REF_TASA_RESP) if TASA_RELATIVA else TASA_RESP_RUIDO
     narr[toc / np.maximum(tam, 1) < tasa_ruido] = -1
+    recibio = np.zeros(N, bool); recibio[pi[isrep]] = True
+    if RUIDO_HILO > 0:
+        en_hilo = isrep | recibio
+        fh = np.bincount(F[F >= 0], weights=en_hilo[F >= 0], minlength=nfc) / np.maximum(tam, 1)
+        narr[fh < RUIDO_HILO * en_hilo.mean()] = -1
 
     # 2-coloreo con signo (árbol de máximo peso)
     lado = np.zeros(nfc, int)
@@ -162,6 +208,35 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     cn = np.full(N, -1); cs = np.zeros(N, int)
     raiz = (F >= 0) & ~isrep
     cn[raiz] = narr[F[raiz]]; cs[raiz] = lado[F[raiz]]
+    if PARTIR_MIXTOS:
+        vot = defaultdict(list)   # comentario raíz con cluster -> clusters de sus respuestas largas con narrativa
+        for i in np.nonzero(isrep & ~corto & (F >= 0))[0]:
+            p_ = pi[i]
+            if raiz[p_] and narr[F[i]] >= 0 and narr[F[p_]] >= 0:
+                vot[p_].append(F[i])
+        por_cl = defaultdict(dict)
+        for p_, fs in vot.items():
+            ns, cu = np.unique(narr[fs], return_counts=True)
+            nv = ns[cu.argmax()]
+            sv = -1 if sum(lado[f] for f in fs if narr[f] == nv) > 0 else 1
+            por_cl[F[p_]][p_] = (nv, sv) if nv != narr[F[p_]] else (narr[F[p_]], lado[F[p_]])
+        n_part = n_mov = 0
+        for f, pv in por_cl.items():
+            otros = defaultdict(int)
+            for nv, _ in pv.values():
+                if nv != narr[f]:
+                    otros[nv] += 1
+            if not otros or max(otros.values()) < ARISTA_MIN:
+                continue
+            mem = np.nonzero(raiz & (F == f))[0]
+            sem = np.array(list(pv))
+            cerca = sem[(E[kid[mem]] @ E[kid[sem]].T).argmax(1)]
+            for i, sm in zip(mem, cerca):
+                nv, sv = pv[sm]
+                if nv != narr[f]:
+                    cn[i], cs[i] = nv, sv; n_mov += 1
+            n_part += 1
+        log(f"  clusters mixtos partidos: {n_part} ({n_mov} comentarios cambian de narrativa)")
     cent = np.zeros((nfc, E.shape[1]), np.float32)
     np.add.at(cent, F[F >= 0], E[kid[F >= 0]])
     cent /= np.linalg.norm(cent, axis=1, keepdims=True) + 1e-9
@@ -173,14 +248,72 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         ok = (bs >= SIM_ASIGNAR) & (narr[b] >= 0)
         cn[ii[ok]] = narr[b[ok]]; cs[ii[ok]] = lado[b[ok]]
 
+    if HILO_RESCATE:
+        hijos = defaultdict(list)
+        for i in np.nonzero(isrep & ~corto & (F >= 0))[0]:
+            if narr[F[i]] >= 0:
+                hijos[pi[i]].append(i)
+        vivos = np.nonzero(narr >= 0)[0]
+        for i in np.nonzero((~isrep) & (cn < 0) & (F < 0) & recibio)[0]:
+            hh = hijos.get(i)
+            if hh:   # el hilo vota: la narrativa más frecuente entre sus respuestas largas; lado opuesto al de esas respuestas
+                ns, cu = np.unique([narr[F[h]] for h in hh], return_counts=True)
+                cn[i] = ns[cu.argmax()]
+                ld = sum(lado[F[h]] for h in hh if narr[F[h]] == cn[i])
+                cs[i] = -1 if ld > 0 else 1
+            elif len(vivos):
+                b = vivos[int((cent[vivos] @ E[kid[i]]).argmax())]
+                cn[i] = narr[b]; cs[i] = lado[b]
+
     # ruido: textos repetidos que nunca entran en una conversación
-    k2 = c.texto.map(_k2).values
+    k2 = c.texto.map(_k3 if RUIDO_LETRAS else _k2).values
     en_resp = set(k2[isrep]) | set(k2[pi[isrep]])
     cnt = pd.Series(k2).value_counts()
     umbral_rep = RUIDO_REPETIDO * max(1.0, N / REF_COMENTARIOS) if RUIDO_REP_ESCALA else RUIDO_REPETIDO
     ruidosos = set(cnt[cnt >= umbral_rep].index) - en_resp
     nk = np.isin(k2, list(ruidosos)) & ~isrep
     cn[nk] = -1
+
+    extra = np.zeros(N, bool)   # asignados por RESTO_VECINO (y lo que hereda de ellos): no deciden qué lado es el mayor
+    if RESTO_VECINO:
+        # lo de las cuentas coordinadas sigue por su propio camino (SIM_COORD, más abajo), que mira el lado completo
+        de_op = c.cuenta_id.isin(set(grupos.cuenta_id[grupos.grupo != ""])).values if grupos is not None else np.zeros(N, bool)
+        resto = np.nonzero((~isrep) & (cn < 0) & (F < 0) & (nw >= 4) & ~nk & ~de_op)[0]
+        if len(resto):
+            kid_ruidoso = np.zeros(len(E), bool); kid_ruidoso[kid[nk]] = True
+            con_cl = lab_kid >= 0
+            ej_narr = np.nonzero(con_cl & (narr[np.maximum(lab_kid, 0)] >= 0) & ~kid_ruidoso)[0]
+            ej_ruido = np.nonzero((con_cl & (narr[np.maximum(lab_kid, 0)] < 0)) | kid_ruidoso)[0]
+            # 1) voto del hilo, por texto: respuestas largas con narrativa a cualquier comentario con ese mismo texto
+            votos = defaultdict(list)
+            for i in np.nonzero(isrep & ~corto & (F >= 0))[0]:
+                if narr[F[i]] >= 0:
+                    votos[kid[pi[i]]].append(F[i])
+            sin_voto = []
+            for i in resto:
+                fs = votos.get(kid[i])
+                if fs:
+                    ns, cu = np.unique(narr[fs], return_counts=True)
+                    cn[i] = ns[cu.argmax()]
+                    cs[i] = -1 if sum(lado[f] for f in fs if narr[f] == cn[i]) > 0 else 1
+                else:
+                    sin_voto.append(i)
+            # 2) vecino más cercano: narrativa del texto con cluster más parecido, si gana contra el ruido conocido
+            sin_voto = np.array(sin_voto, dtype=int)
+            if len(sin_voto) and len(ej_narr):
+                uk, inv = np.unique(kid[sin_voto], return_inverse=True)
+                mejor = np.zeros(len(uk), int); gana = np.zeros(len(uk), bool)
+                paso = max(64, int(2e8 // max(len(ej_narr), 1)))
+                for i0 in range(0, len(uk), paso):
+                    q = E[uk[i0:i0 + paso]]
+                    S = q @ E[ej_narr].T
+                    mejor[i0:i0 + paso] = ej_narr[S.argmax(1)]
+                    sz = (q @ E[ej_ruido].T).max(1) if len(ej_ruido) else np.full(len(q), -1.0)
+                    gana[i0:i0 + paso] = S.max(1) > sz
+                f = lab_kid[mejor[inv]]; ok = gana[inv]
+                cn[sin_voto[ok]] = narr[f[ok]]; cs[sin_voto[ok]] = lado[f[ok]]
+            extra[resto] = cn[resto] >= 0
+            log(f"  resto sin cluster: {len(resto)}; con voto de hilo {len(resto) - len(sin_voto)}, quedan como ruido {int((cn[resto] < 0).sum())}")
 
     # respuestas: heredan del padre, en orden temporal
     for i in np.argsort(c.ts.values, kind="stable"):
@@ -189,7 +322,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         p = pi[i]
         if cn[p] < 0 and not corto[i] and F[i] >= 0 and narr[F[i]] >= 0:
             cn[i] = narr[F[i]]; cs[i] = lado[F[i]]; continue
-        cn[i] = cn[p]
+        cn[i] = cn[p]; extra[i] = extra[p] and (corto[i] or F[i] < 0 or narr[F[i]] < 0)   # una respuesta larga con cluster propio ya contaba
         cs[i] = cs[p] if corto[i] else -cs[p]
         if not corto[i] and F[i] >= 0 and narr[F[i]] == cn[p] and lado[F[i]] != 0:
             cs[i] = lado[F[i]]
@@ -199,7 +332,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     if grupos is not None:
         coord_c = set(grupos.cuenta_id[grupos.grupo != ""])
         es_coord = c.cuenta_id.isin(coord_c).values
-        asign = (cn >= 0) & ~isrep
+        asign = (cn >= 0) & ~isrep & ~extra
         claves_ns = sorted(set(zip(cn[asign], cs[asign])))
         if claves_ns:
             C = np.zeros((len(claves_ns), E.shape[1]), np.float32)
@@ -231,7 +364,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     grandes = set(tam_n[tam_n >= FRAG_FRAC * tot].index)
     chicas = set(tam_n.index) - grandes
     if grandes and chicas:
-        base = (cn >= 0) & ~isrep
+        base = (cn >= 0) & ~isrep & ~extra
         def centroides(mask):
             keys = sorted(set(zip(cn[mask], cs[mask])))
             C = np.zeros((len(keys), E.shape[1]), np.float32)
@@ -239,6 +372,13 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
             np.add.at(C, np.array([pos[k] for k in zip(cn[mask], cs[mask])], dtype=int), E[kid[mask]])
             return keys, C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)
         kg, Cg = centroides(base & np.isin(cn, list(grandes)))
+        if FRAG_VECINO:
+            mg = base & np.isin(cn, list(grandes)) & (F >= 0)
+            tri = pd.DataFrame({"f": F[mg], "n": cn[mg], "s": cs[mg]})
+            dom = tri.groupby("f")[["n", "s"]].agg(lambda v: v.mode().iat[0])   # narrativa y lado mayoritarios de cada cluster fino
+            if len(dom):
+                kg = [(int(a), int(b)) for a, b in zip(dom.n, dom.s)]
+                Cg = cent[dom.index.values]
         kc, Cc = centroides(base & np.isin(cn, list(chicas)))
         S = Cc @ Cg.T
         destino = {kc[i]: kg[int(S[i].argmax())] for i in range(len(kc)) if S[i].max() >= SIM_FRAG}
@@ -253,6 +393,7 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     df = pd.DataFrame({"comentario_id": c.comentario_id.values, "n": cn, "s": cs, "ts": c.ts.values,
                        "texto": c.texto.values, "cuenta_id": c.cuenta_id.values, "rep": isrep, "kid": kid,
                        "respuesta_a": c.respuesta_a.values})
+    df["extra"] = extra
     coord = set()
     if grupos is not None:
         coord = set(grupos.cuenta_id[grupos.grupo != ""])
@@ -261,7 +402,8 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     filas = []
     tokdf = []
     for n, gd in df[df.n >= 0].groupby("n"):
-        s1, s2 = (gd.s == 1).sum(), (gd.s == -1).sum()
+        gb = gd[~gd.extra] if gd.extra.any() and not gd.extra.all() else gd
+        s1, s2 = (gb.s == 1).sum(), (gb.s == -1).sum()
         apo, metodo = (1 if s1 >= s2 else -1), "lado mayor"
         cg = gd[gd.coord & ~gd.rep]
         if len(cg) >= 30:
@@ -275,6 +417,14 @@ def narrativas(c, E, kid, grupos=None, log=print, llm=None):
         origen = int(ts[hit[0]] if len(hit) else ts[0])
         filas.append({"n": n, "apo": apo, "metodo_postura": metodo, "origen": origen, "comentarios": len(gd)})
     nd = pd.DataFrame(filas, columns=["n", "apo", "metodo_postura", "origen", "comentarios"])
+    if _ancla is not None and len(nd):
+        df["ancla"] = _ancla
+        for i, r in nd.iterrows():
+            gd = df[(df.n == r.n) & (df.ancla != 0)]
+            if len(gd):
+                acuerdo = (gd.s.values * gd.ancla.values).sum()   # > 0: el lado +1 es el que la primera pasada llamó "apoya"
+                if acuerdo != 0:
+                    nd.loc[i, "apo"] = 1 if acuerdo > 0 else -1
     if nd.empty:
         raise RuntimeError("no quedó ninguna narrativa (¿el set casi no tiene respuestas?)")
 
