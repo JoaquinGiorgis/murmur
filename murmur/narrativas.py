@@ -57,6 +57,8 @@ ORIGEN_INICIO = True  # True: si desde la ventana que dispara el umbral se llega
 COORD_RESTO = True    # True: los comentarios raíz sin cluster de cuentas coordinadas también pasan por RESTO_VECINO (voto del
                       # hilo o texto más parecido) en vez de depender solo de SIM_COORD, que deja como ruido las consignas
                       # que no llegan a 0,55 contra el promedio del lado; el lado es el que esa operación ya empuja ahí
+VOTO_MAYORIA = True   # True: el voto por texto vale solo si más de la mitad de las respuestas largas a ese texto votan la
+                      # misma narrativa; un texto que acompaña a cualquier tema ("ni más ni menos") no se lleva a una sola
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
@@ -306,6 +308,10 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
             sin_voto = []
             for i in resto:
                 fs = votos.get(kid[i])
+                if fs and VOTO_MAYORIA:
+                    ns, cu = np.unique(narr[fs], return_counts=True)
+                    if cu.max() * 2 <= cu.sum():
+                        fs = None
                 if fs:
                     ns, cu = np.unique(narr[fs], return_counts=True)
                     cn[i] = ns[cu.argmax()]
