@@ -91,6 +91,14 @@ def main():
             llm = narrativas.LLM(log=log)
             log(f"  IA activada ({llm.modelo}) para elegir postura y nombrar narrativas")
         df, nd, uso = narrativas.narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
+        if coordinacion.ALIN_PUBS > 0:
+            try:  # si falla, queda el cuentas.csv que ya está escrito
+                grupos2, ops2, n_ali = coordinacion.sumar_alineados(c, grupos, ops, df.n.values, df.s.values, log=log)
+                if n_ali:
+                    grupos2.to_csv(a.entrega / "cuentas.csv", index=False)
+                    grupos, ops = grupos2, ops2
+            except Exception as e:
+                log(f"  AVISO: no se pudieron sumar alineados ({e!r}); quedan núcleo y satélites")
         tiempos["narrativas"] = round(time.time() - t, 1)
         memoria["narrativas"] = _pico_mb()
     except Exception as e:
@@ -102,6 +110,15 @@ def main():
                            "cuenta_id": c.cuenta_id.values})
         nd = pd.DataFrame(columns=["n", "narrativa", "titulo", "frases_clave", "fecha_origen",
                                    "comentarios", "metodo_postura", "apo", "origen"])
+
+    if coordinacion.PROPIO_FRAC > 0:
+        try:  # si falla, queda el cuentas.csv que ya está escrito
+            grupos2, ops2, n_voc = coordinacion.sumar_vocabulario(c, grupos, ops, log=log)
+            if n_voc:
+                grupos2.to_csv(a.entrega / "cuentas.csv", index=False)
+                grupos, ops = grupos2, ops2
+        except Exception as e:
+            log(f"  AVISO: no se pudo aplicar el vocabulario propio ({e!r}); queda lo anterior")
 
     # --- entrega
     df[["comentario_id", "narrativa", "postura"]].to_csv(a.entrega / "comentarios.csv", index=False)

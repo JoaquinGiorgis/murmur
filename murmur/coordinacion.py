@@ -13,6 +13,7 @@ Idea: una ráfaga no alcanza; lo que delata a una operación es la repetición.
    coincide muchas veces; la opinión genuina forma árboles ralos.
 """
 from collections import defaultdict
+import re, unicodedata
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -152,3 +153,124 @@ def sumar_satelites(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, E,
             ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
     log(f"  satélites sumados a operaciones: {len(mejor)}")
     return grupos, ops, len(mejor)
+
+
+# --- alineados: cuentas activas de una operación que la co-acción par a par no alcanza a ver
+ALIN_PUBS, ALIN_NUC = 2, 3   # ALIN_PUBS = 0: apagado
+ALIN_FRAC = 0.1              # y al menos esta parte de todas las publicaciones de la cuenta: sin esto, las cuentas
+                             # hiperactivas (100-300 comentarios) entran por puro volumen (modelo nulo: 0,61 -> 0,06 por set)
+
+
+def sumar_alineados(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, narr, lado, log=print):
+    """Suma a cada operación las cuentas que empujan lo mismo que el núcleo, a la vez que el núcleo, más de una vez.
+
+    Cada operación empuja un lado de una narrativa (el más frecuente entre los comentarios del núcleo). Una cuenta
+    entra si en al menos ALIN_PUBS publicaciones distintas tiene un comentario de esa narrativa y ese lado a menos
+    de VENTANA de comentarios, también de esa narrativa y lado, de al menos ALIN_NUC cuentas distintas del núcleo.
+    Las cuentas con actividad de cobertura reparten sus coincidencias entre muchos miembros (k <= 3 por par) y no
+    forman pares sospechosos, pero caen una y otra vez dentro de la ráfaga; una cuenta genuina coincide a lo sumo
+    una vez. `narr` y `lado` son la narrativa (-1 = ruido) y el lado de cada comentario, en el orden de `c`.
+    No crea operaciones ni cambia las narrativas.
+    """
+    if ALIN_PUBS <= 0 or not len(c):
+        return grupos, ops, 0
+    g = dict(zip(grupos.cuenta_id, grupos.grupo))
+    grp = c.cuenta_id.map(g).fillna("").values
+    narr, lado = np.asarray(narr), np.asarray(lado)
+    ts, cuenta, pub = c.ts.values, c.cuenta_id.values, c.publicacion_id.values
+    npub = c.groupby("cuenta_id").publicacion_id.nunique()
+    mejor = {}   # cuenta -> (publicaciones, operación)
+    for op in sorted(set(grp) - {""}):
+        del_op = (grp == op) & (narr >= 0)
+        if not del_op.any():
+            continue
+        claves, cuantos = np.unique(np.stack([narr[del_op], lado[del_op]], 1), axis=0, return_counts=True)
+        n_dom, s_dom = claves[cuantos.argmax()]
+        dom = (narr == n_dom) & (lado == s_dom)
+        nuc_i = np.nonzero(dom & (grp == op))[0]
+        cand_i = np.nonzero(dom & (grp == ""))[0]
+        if not len(cand_i):
+            continue
+        nuc_por_pub = pd.Series(nuc_i).groupby(pub[nuc_i]).apply(lambda s: s.values)
+        cand_por_pub = pd.Series(cand_i).groupby(pub[cand_i]).apply(lambda s: s.values)
+        pubs = defaultdict(set)
+        for p, nn in nuc_por_pub.items():
+            if p not in cand_por_pub.index or len(set(cuenta[nn])) < ALIN_NUC:
+                continue
+            cc = cand_por_pub[p]
+            m = np.abs(ts[cc][:, None] - ts[nn][None, :]) <= VENTANA
+            for i in np.nonzero(m.sum(1) >= ALIN_NUC)[0]:
+                if len(set(cuenta[nn[m[i]]])) >= ALIN_NUC:
+                    pubs[cuenta[cc[i]]].add(p)
+        for cu, ps in pubs.items():
+            if len(ps) >= max(ALIN_PUBS, ALIN_FRAC * npub[cu]) and (cu not in mejor or len(ps) > mejor[cu][0]):
+                mejor[cu] = (len(ps), op)
+    if mejor:
+        grupos = grupos.copy()
+        grupos["grupo"] = [mejor[cu][1] if cu in mejor else gr for cu, gr in zip(grupos.cuenta_id, grupos.grupo)]
+        if len(ops):
+            ops = ops.copy()
+            ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
+    log(f"  alineados sumados a operaciones: {len(mejor)}")
+    return grupos, ops, len(mejor)
+
+
+# --- vocabulario propio: cuentas de poca actividad que usan las consignas de una operación ya detectada
+PROPIO_FRAC = 0.6                   # 0 = apagado. Parte mínima de las cuentas que usan un término que debe ser del núcleo
+PROPIO_NUC, PROPIO_MIN = 0.2, 5     # el término lo usa al menos el 20% del núcleo (y al menos 5 cuentas)
+
+
+def _terminos(t):
+    t = unicodedata.normalize("NFKD", str(t).lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return set(re.findall(r"#?[a-z0-9_]{3,}", t))
+
+
+def sumar_vocabulario(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, log=print):
+    """Suma a cada operación las cuentas que usan su vocabulario propio dentro de una de sus ráfagas.
+
+    Un término (palabra o hashtag) es propio de una operación si lo usa buena parte del núcleo y casi nadie más
+    (el núcleo es >= PROPIO_FRAC de todas las cuentas que lo usan): eso lo miden los datos, no una lista. Una
+    cuenta sin marcar entra si escribió un comentario con un término propio a menos de VENTANA de un comentario
+    del núcleo en la misma publicación. Si los genuinos usan las mismas consignas, ningún término califica y la
+    regla no hace nada. No crea operaciones.
+    """
+    if PROPIO_FRAC <= 0 or not len(c):
+        return grupos, ops, 0
+    g = dict(zip(grupos.cuenta_id, grupos.grupo))
+    grp = c.cuenta_id.map(g).fillna("").values
+    if not (grp != "").any():
+        return grupos, ops, 0
+    ts, cuenta, pub = c.ts.values, c.cuenta_id.values, c.publicacion_id.values
+    tk = [_terminos(t) for t in c.texto.fillna("").values]
+    del_nucleo = set().union(*(tk[i] for i in np.nonzero(grp != "")[0]))   # solo importan los términos que usa algún núcleo
+    tk = [x & del_nucleo for x in tk]
+    ii = np.repeat(np.arange(len(c)), [len(x) for x in tk])
+    tc = pd.DataFrame({"i": ii, "t": [w for x in tk for w in x]})
+    tc["cuenta"] = cuenta[tc.i.values]; tc["g"] = grp[tc.i.values]
+    usan = tc.drop_duplicates(["t", "cuenta"])
+    total = usan.groupby("t").size()
+    nuevo = {}
+    for op in sorted(set(grp) - {""}):
+        n_nuc = len(set(cuenta[grp == op]))
+        del_nuc = usan[usan.g == op].groupby("t").size()
+        propios = del_nuc[(del_nuc >= max(PROPIO_MIN, PROPIO_NUC * n_nuc)) & (del_nuc / total.reindex(del_nuc.index) >= PROPIO_FRAC)].index
+        if not len(propios):
+            continue
+        cand = np.unique(tc.i.values[tc.t.isin(propios).values & (tc.g.values == "")])
+        nuc_i = np.nonzero(grp == op)[0]
+        t_nuc = pd.Series(ts[nuc_i]).groupby(pub[nuc_i]).apply(lambda s: np.sort(s.values))
+        for i in cand:
+            if cuenta[i] in nuevo or pub[i] not in t_nuc.index:
+                continue
+            tn = t_nuc[pub[i]]
+            if np.searchsorted(tn, ts[i] + VENTANA, "right") > np.searchsorted(tn, ts[i] - VENTANA, "left"):
+                nuevo[cuenta[i]] = op
+    if nuevo:
+        grupos = grupos.copy()
+        grupos["grupo"] = [nuevo.get(cu, gr) for cu, gr in zip(grupos.cuenta_id, grupos.grupo)]
+        if len(ops):
+            ops = ops.copy()
+            ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
+    log(f"  sumadas por vocabulario propio: {len(nuevo)}")
+    return grupos, ops, len(nuevo)
