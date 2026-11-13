@@ -59,6 +59,10 @@ COORD_RESTO = True    # True: los comentarios raíz sin cluster de cuentas coord
                       # que no llegan a 0,55 contra el promedio del lado; el lado es el que esa operación ya empuja ahí
 VOTO_MAYORIA = True   # True: el voto por texto vale solo si más de la mitad de las respuestas largas a ese texto votan la
                       # misma narrativa; un texto que acompaña a cualquier tema ("ni más ni menos") no se lleva a una sola
+OP_LADO_HILO = True   # True: el lado que una operación empuja en una narrativa lo dicen las respuestas largas de cuentas no
+                      # coordinadas a sus comentarios (una respuesta larga va del lado opuesto): si una mayoría estricta
+                      # (al menos ARISTA_MIN votos) señala un lado, todos los comentarios raíz de la operación en su narrativa
+                      # principal van ahí. SIM_COORD elige lado por parecido y una consigna comparte palabras con su refutación
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
@@ -372,6 +376,39 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
                 for i in np.argsort(c.ts.values, kind="stable"):
                     if isrep[i] and cn[i] < 0 and cn[pi[i]] >= 0:
                         cn[i] = cn[pi[i]]; cs[i] = cs[pi[i]] if corto[i] else -cs[pi[i]]
+
+    if OP_LADO_HILO and grupos is not None:
+        op_de = c.cuenta_id.map(dict(zip(grupos.cuenta_id, grupos.grupo))).fillna("").values
+        es_op = op_de != ""
+        votos_op = defaultdict(list)   # (operación, narrativa) -> lado que cada respuesta larga ajena le señala a la consigna
+        for i in np.nonzero(isrep & ~corto & ~es_op & (F >= 0))[0]:
+            p_ = pi[i]
+            if es_op[p_] and not isrep[p_] and cn[p_] >= 0 and narr[F[i]] == cn[p_] and lado[F[i]] != 0:
+                votos_op[(op_de[p_], cn[p_])].append(-lado[F[i]])
+        cambiados = set()
+        raices_op = es_op & ~isrep & (cn >= 0)
+        # solo en la narrativa que la operación más empuja: en las demás su actividad es de cobertura y va de los dos lados
+        principal = pd.Series(cn[raices_op]).groupby(op_de[raices_op]).agg(lambda v: v.mode().iat[0]).to_dict()
+        for (op_, n_), vs in sorted(votos_op.items()):
+            if principal.get(op_) != n_:
+                continue
+            mas, menos = vs.count(1), vs.count(-1)
+            if len(vs) < ARISTA_MIN or max(mas, menos) * 2 <= len(vs):
+                continue
+            s_op = 1 if mas > menos else -1
+            ii = np.nonzero((op_de == op_) & ~isrep & (cn == n_) & (cs != s_op))[0]
+            cs[ii] = s_op
+            cambiados.update(ii.tolist())
+        n_raiz = len(cambiados)
+        if cambiados:   # las respuestas a lo que cambió se recalculan con la misma regla de siempre, en orden temporal
+            for i in np.argsort(c.ts.values, kind="stable"):
+                if isrep[i] and pi[i] in cambiados and cn[i] == cn[pi[i]]:
+                    nuevo = cs[pi[i]] if corto[i] else -cs[pi[i]]
+                    if not corto[i] and F[i] >= 0 and narr[F[i]] == cn[pi[i]] and lado[F[i]] != 0:
+                        nuevo = lado[F[i]]
+                    if nuevo != cs[i]:
+                        cs[i] = nuevo; cambiados.add(i)
+        log(f"  lado de operaciones por hilo: {n_raiz} comentarios raíz cambian de lado ({len(cambiados) - n_raiz} respuestas)")
 
     # renumerar narrativas por tamaño
     vals, cnts = np.unique(cn[cn >= 0], return_counts=True)
