@@ -704,7 +704,7 @@ class LLM:
                   '"titulo": "la afirmación original en una frase corta", "frases_clave": ["3 a 6 términos"]}')
         if self.abortado:
             return None
-        body = json.dumps({"model": self.modelo, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}).encode()
+        body = json.dumps({"model": self.modelo, "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}]}).encode()
         r = self._post(body)
         if r is None:
             with self.lock:
