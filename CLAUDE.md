@@ -84,6 +84,8 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
   - FRAG_RESPUESTAS (c832ca5): narrativas fantasma, práctica 18 → 13;
   - RAFAGAS (cdd16fa): ult7dias +3,8, pubs50_s2 +4,2, pubs25 +10,8;
   - ORIGEN_INICIO (3baab98): ult7dias +0,13.
+  - COORD_RESTO (272a3cb, bug hallado auditando errores por camino): 105 consignas de C1 sin cluster quedaban como ruido; suma +0,12. Efecto secundario conocido: en sin_hospital fija mal el lado de 237 consignas (postura −0,002); arreglarlo partía en dos lados a una operación del set final y se descartó.
+  - VOTO_MAYORIA (ffdc565): el voto de hilo por texto exige mayoría ("Ni más ni menos" iba a una sola narrativa); resp20 +0,05.
 - Rechazados con medición; quedan como flags apagadas o fuera del repo:
   - RUIDO_HILO (la idea del rival: clusters fuera de hilos → ruido): suma −2,68. El ruido real nunca está en un hilo y lo que se perdía eran raíces sin cluster.
   - HILO_RESCATE: superado por RESTO_VECINO.
@@ -95,6 +97,7 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 - Postura sin IA: 11 señales probadas para orientar las narrativas 50/50 (raíces, origen, negación, etc.) y ninguna supera al lado mayor. Cada una acierta siempre en unas narrativas y falla en otras. Sin IA queda como una moneda por narrativa balanceada.
 - Pruebas nuevas: `tests/test_nulo.py --completo` (pipeline entero, 115/115 reales y 0 en barajados) y `tests/variantes.py`.
 - Límite que queda: C2 (textos variados, sin pares repetidos) en recortes de 7 días o con el 50% de las publicaciones.
+- Los 2 FP del banco (dias10 y sin_colectivo) son la misma cuenta genuina muy activa (u015025), que cayó en dos ráfagas de C2 y cruzó el umbral de pares por centésimas. No es un bug: sacarla pediría un tope de actividad nuevo.
 
 **Viernes:** correr sin IA y pushear de inmediato; después con IA y pisar. No tocar código ese día.
 
