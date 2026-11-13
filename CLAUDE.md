@@ -74,6 +74,28 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
 - OJO: con pandas 3, `to_datetime(...).astype("int64")` da microsegundos, no nanosegundos. Los análisis de texto casi duplicado, periferia y sincronía se rehicieron con la unidad corregida, y ninguno separa campaña de genuinas sin perder precisión. dias10: sincronía ≤30 s en ≥3 publicaciones, 7 de campaña contra 62 genuinas; periferia ≥20%, 8 contra 96; texto ≥0,6 en ≥2 publicaciones, 119 pares contra 1.010.
 - Límite conocido: las cuentas de campaña con 2 o 3 comentarios no se distinguen por co-acción. Es la mayor pérdida que queda (~4 puntos en dias10).
 
+**Viernes 13/11, madrugada (hecho, con Fable 5.2; práctica con IA 53,31 → 54,89):**
+- Aceptados, cada uno con el banco completo (ningún recorte baja, FP iguales):
+  - alineados + vocabulario propio (604c31d), coordinación 23,73 → 25,00;
+  - RESTO_VECINO (dc59786): nada va a ruido por descarte; ruido 0,974 → 0,995;
+  - PARTIR_MIXTOS + ANCLA_POSTURA (9f82a8d); uno sin el otro no pasa (la postura sin IA se da vuelta);
+  - NUCLEO_ALIN (d84703a): dias7 +7;
+  - FRAG_VECINO con 3 variantes (fffbd84): resp20 +3;
+  - FRAG_RESPUESTAS (c832ca5): narrativas fantasma, práctica 18 → 13;
+  - RAFAGAS (cdd16fa): ult7dias +3,8, pubs50_s2 +4,2, pubs25 +10,8;
+  - ORIGEN_INICIO (3baab98): ult7dias +0,13.
+- Rechazados con medición; quedan como flags apagadas o fuera del repo:
+  - RUIDO_HILO (la idea del rival: clusters fuera de hilos → ruido): suma −2,68. El ruido real nunca está en un hilo y lo que se perdía eran raíces sin cluster.
+  - HILO_RESCATE: superado por RESTO_VECINO.
+  - RUIDO_LETRAS: resp20 −0,05.
+  - Aceptar grupos calibrando contra un nulo barajado: la frontera nula es inestable y deja pasar masas genuinas.
+  - PARTIR_PUENTES: resp20 −0,42.
+  - kNN para minorías de clusters mezclados: dias7 −0,05 y mueve 2.065 comentarios.
+  - Respuestas mutuas del mismo lado para C2: limpia, pero no encuentra nada nuevo.
+- Postura sin IA: 11 señales probadas para orientar las narrativas 50/50 (raíces, origen, negación, etc.) y ninguna supera al lado mayor. Cada una acierta siempre en unas narrativas y falla en otras. Sin IA queda como una moneda por narrativa balanceada.
+- Pruebas nuevas: `tests/test_nulo.py --completo` (pipeline entero, 115/115 reales y 0 en barajados) y `tests/variantes.py`.
+- Límite que queda: C2 (textos variados, sin pares repetidos) en recortes de 7 días o con el 50% de las publicaciones.
+
 **Viernes:** correr sin IA y pushear de inmediato; después con IA y pisar. No tocar código ese día.
 
 **No hacer:** cambiar embeddings o UMAP; reajustar umbrales para pasar de 52,5 a 53 en práctica; IA por comentario; usar la fecha de creación de cuentas como regla dura.
