@@ -91,6 +91,14 @@ def main():
             llm = narrativas.LLM(log=log)
             log(f"  IA activada ({llm.modelo}) para elegir postura y nombrar narrativas")
         df, nd, uso = narrativas.narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
+        if coordinacion.NUCLEO_ALIN:
+            try:  # si falla, queda el cuentas.csv que ya está escrito
+                grupos2, ops2, n_nuc = coordinacion.rescatar_nucleos(c, grupos, ops, df.n.values, df.s.values, log=log)
+                if n_nuc:
+                    grupos2.to_csv(a.entrega / "cuentas.csv", index=False)
+                    grupos, ops = grupos2, ops2
+            except Exception as e:
+                log(f"  AVISO: no se pudieron rescatar núcleos alineados ({e!r}); queda lo anterior")
         if coordinacion.ALIN_PUBS > 0:
             try:  # si falla, queda el cuentas.csv que ya está escrito
                 grupos2, ops2, n_ali = coordinacion.sumar_alineados(c, grupos, ops, df.n.values, df.s.values, log=log)

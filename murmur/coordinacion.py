@@ -29,6 +29,9 @@ TAM_MAX_FRAC = 0.02   # una "operación" que abarca >2% de las cuentas es la mas
 DENS_MIN = 0.09       # densidad del grupo podado (grado medio / (n-1)): operaciones 0,12-0,32; grupos genuinos <= 0,063
 
 
+ULTIMOS_DESCARTADOS = []   # grupos podados que no pasaron grado/densidad en la última llamada a detectar (no cambia su salida)
+
+
 def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
     a, acc = pd.factorize(c.cuenta_id)
     N = len(acc)
@@ -72,6 +75,8 @@ def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
 
     grupo = {}
     ops = []
+    descartados = ULTIMOS_DESCARTADOS
+    descartados.clear()
     for cid in np.unique(memb):
         ii = np.nonzero(memb == cid)[0]
         if len(ii) < TAM_MIN or len(ii) > TAM_MAX_FRAC * N:
@@ -94,6 +99,8 @@ def detectar(c: pd.DataFrame, todas_cuentas: pd.Series, log=print):
             ops.append({"grupo": nombre, "cuentas": int(len(ii)), "grado_medio": round(grado, 2), "densidad": round(densidad, 3)})
             for i in ii:
                 grupo[acc[i]] = nombre
+        else:
+            descartados.append((acc[ii], round(grado, 2), round(densidad, 3)))
     log(f"  operaciones: {len(ops)}  cuentas marcadas: {len(grupo)}")
     out = pd.DataFrame({"cuenta_id": todas_cuentas.values})
     out["grupo"] = out.cuenta_id.map(grupo).fillna("")
@@ -274,3 +281,60 @@ def sumar_vocabulario(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, 
             ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
     log(f"  sumadas por vocabulario propio: {len(nuevo)}")
     return grupos, ops, len(nuevo)
+
+
+# --- núcleos alineados: segunda oportunidad para los grupos que no pasaron grado/densidad
+NUCLEO_ALIN = True    # True: usa ALIN_NUC, ALIN_PUBS y ALIN_FRAC (los mismos números que sumar_alineados) y TAM_MIN
+
+
+def rescatar_nucleos(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, narr, lado, log=print):
+    """Acepta como operación el núcleo de un grupo descartado si sus cuentas empujan lo mismo, juntas, más de una vez.
+
+    En sets chicos una operación deja pocos pares sospechosos y el grupo podado no llega a GRADO_MIN/DENS_MIN (o
+    arrastra genuinas que lo diluyen). Dentro de cada grupo descartado se busca el núcleo que se sostiene solo:
+    cuentas que en al menos ALIN_PUBS publicaciones (y ALIN_FRAC de las suyas) comentan el lado dominante del grupo
+    a menos de VENTANA de otras ALIN_NUC cuentas del núcleo que comentan lo mismo. Se itera hasta que no cambia; si
+    quedan al menos TAM_MIN cuentas, es una operación. Las genuinas arrastradas no cumplen y quedan afuera.
+    """
+    if not NUCLEO_ALIN or not ULTIMOS_DESCARTADOS or not len(c):
+        return grupos, ops, 0
+    narr, lado = np.asarray(narr), np.asarray(lado)
+    ts, cuenta, pub = c.ts.values, c.cuenta_id.values, c.publicacion_id.values
+    npub = c.groupby("cuenta_id").publicacion_id.nunique()
+    ya = set(grupos.cuenta_id[grupos.grupo != ""])
+    nuevos = {}
+    filas = ops.to_dict("records") if len(ops) else []
+    for cuentas_g, grado, dens in ULTIMOS_DESCARTADOS:
+        mi = set(cuentas_g) - ya
+        while len(mi) >= TAM_MIN:
+            m = np.isin(cuenta, list(mi)) & (narr >= 0)
+            if not m.any():
+                mi = set(); break
+            claves, cuantos = np.unique(np.stack([narr[m], lado[m]], 1), axis=0, return_counts=True)
+            n_dom, s_dom = claves[cuantos.argmax()]
+            idx = np.nonzero(m & (narr == n_dom) & (lado == s_dom))[0]
+            pubs = defaultdict(set)
+            for p, ii in pd.Series(idx).groupby(pub[idx]):
+                ii = ii.values
+                if len(set(cuenta[ii])) <= ALIN_NUC:
+                    continue
+                cerca = np.abs(ts[ii][:, None] - ts[ii][None, :]) <= VENTANA
+                for j in range(len(ii)):
+                    if len(set(cuenta[ii[cerca[j]]]) - {cuenta[ii[j]]}) >= ALIN_NUC:
+                        pubs[cuenta[ii[j]]].add(p)
+            ok = {cu for cu, ps in pubs.items() if len(ps) >= max(ALIN_PUBS, ALIN_FRAC * npub[cu], 1)}
+            if ok == mi:
+                break
+            mi = ok
+        if len(mi) >= TAM_MIN:
+            nombre = f"op{len(filas) + 1:02d}"
+            filas.append({"grupo": nombre, "cuentas": len(mi), "grado_medio": grado, "densidad": dens})
+            for cu in mi:
+                nuevos[cu] = nombre
+            ya |= mi
+    if nuevos:
+        grupos = grupos.copy()
+        grupos["grupo"] = [nuevos.get(cu, gr) for cu, gr in zip(grupos.cuenta_id, grupos.grupo)]
+        ops = pd.DataFrame(filas)
+    log(f"  núcleos alineados rescatados: {len(set(nuevos.values()))} operaciones, {len(nuevos)} cuentas")
+    return grupos, ops, len(nuevos)
