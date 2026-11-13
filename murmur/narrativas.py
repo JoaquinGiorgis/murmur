@@ -49,12 +49,12 @@ RUIDO_HILO = 0.0      # 0 = apagado. Un cluster fino pasa a ruido si la parte de
 FRAG_VECINO = False   # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
                       # parecida, no al promedio de todo el lado: el promedio de una narrativa grande y variada queda lejos
                       # de cada variante y una narrativa chica y compacta del mismo tema se la lleva
-PARTIR_MIXTOS = False # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
+PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
 RUIDO_LETRAS = False  # True: la clave del texto repetido ignora letras traspuestas dentro de cada palabra ('Alguein' = 'Alguien'):
                       # las variantes con errores de tipeo de un aviso repetido que nadie contesta también son ruido
-ANCLA_POSTURA = False # True: con alguna de las opciones de abajo prendidas, el lado que 'apoya' sin IA se decide igual que
+ANCLA_POSTURA = True  # True: con alguna de las opciones de abajo prendidas, el lado que 'apoya' sin IA se decide igual que
                       # sin ellas (primera pasada, sin IA) y se traslada por solapamiento: en narrativas 50/50 el 'lado mayor'
                       # depende de un puñado de comentarios y cualquier mejora de asignación lo daba vuelta al azar
 RESTO_VECINO = True   # True: los comentarios raíz que HDBSCAN dejó sin cluster y no entraron por SIM_ASIGNAR no van a ruido
