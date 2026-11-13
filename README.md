@@ -140,7 +140,7 @@ Además lo corrimos sobre variantes del set con cambios de forma y de contenido 
 
 Sin respuestas no hay con qué coser los clusters en narrativas, así que salen muchas y chicas, aunque la coordinación sigue funcionando. Con el tiempo estirado al doble, las ráfagas de 12 minutos pasan a 24 y parte de las coincidencias cae fuera de la ventana de 10 minutos.
 
-**Reproducibilidad, medida:** desde un clon limpio del repo, sin IA y sin red, el set final da `cuentas.csv` idéntico byte a byte a la entrega con IA, las mismas narrativas en los 150.000 comentarios, las mismas fechas de origen y la misma postura en las 12 narrativas; solo cambian los títulos, que sin IA salen del texto más frecuente.
+**Reproducibilidad, medida:** desde un clon limpio del repo, sin IA y sin red, el set final da `cuentas.csv` idéntico byte a byte a la entrega con IA, las mismas 12 narrativas con las mismas fechas de origen y el mismo lado en cada una. En los comentarios, 244 de 150.000 (0,16 %) caen en otra narrativa: los embeddings recién calculados difieren en el último bit de float16 de los que estaban en caché, y eso mueve unos pocos puntos de borde en el clustering. Los títulos también cambian, porque sin IA salen del texto más frecuente.
 
 La ingesta también acepta `.csv` sin comprimir, columnas faltantes (avisa), texto en latin-1 (lo detecta y lo relee) y comillas mal cerradas sin perder filas, y compara cuántas filas leyó contra el archivo. Si una etapa falla, la otra se entrega igual: los cuatro archivos siempre se escriben, y el proceso termina con código 2 y un aviso visible.
 
