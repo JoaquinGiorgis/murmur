@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .narrativas import _segmentos
+
 BIN = 6 * 3600  # 6 horas
 TZ = -3 * 3600
 
@@ -26,14 +28,33 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
     op_n = raiz_op.groupby(["grupo", "narrativa"]).size()
     op_tot = raiz_op.groupby("grupo").size()
 
+    # textos que aparecen en más de una narrativa ("Y la plata dónde está?"): no sirven de ejemplo de ninguna
+    con_n = df[(df.n >= 0) & ~df.rep]
+    en_varias = con_n.assign(t=con_n.texto.astype(str).str.strip()).groupby("t").narrativa.nunique()
+    en_varias = set(en_varias[en_varias > 1].index)
+
     def ejemplo(textos):
-        """El texto más repetido (normalizado por espacios), recortado: muestra la postura con palabras reales."""
+        """El texto más repetido que es propio de esta narrativa, recortado: muestra la postura con palabras reales."""
         t = textos.astype(str).str.strip()
         t = t[t.str.split().str.len() >= 5]
         if not len(t):
             return ""
-        x = t.value_counts().index[0]
+        propios = t[~t.isin(en_varias)]
+        x = (propios if len(propios) else t).value_counts().index[0]
         return x if len(x) <= 160 else x[:157].rstrip() + "…"
+
+    # muletillas: segmentos ("te digo algo", "es así") que aparecen en muchas narrativas, mismo criterio que los títulos
+    seg_n = {}
+    for nar, tx in con_n.groupby("narrativa").texto:
+        for x in tx.astype(str).drop_duplicates():
+            for sg in _segmentos(x):
+                seg_n.setdefault(sg, set()).add(nar)
+    n_narr = max(con_n.narrativa.nunique(), 1)
+    muletillas = {sg for sg, ns in seg_n.items() if len(ns) >= max(3, 0.25 * n_narr)}
+
+    def clave(t):
+        """Texto sin mayúsculas, emojis, hashtags ni muletillas: dos variantes de la misma consigna dan la misma clave."""
+        return " | ".join(sg for sg in _segmentos(" ".join(w for w in str(t).split() if not w.startswith("#"))) if sg not in muletillas)
 
     narrs = []
     for _, r in nd.sort_values("comentarios", ascending=False).iterrows():
@@ -75,6 +96,18 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
         rep = sub[sub.rep & sub.respuesta_a.notna()]
         autor_padre = rep.respuesta_a.map(autor)
         entre = int((autor_padre.isin(set(mem)) & (autor_padre != rep.cuenta_id)).sum())
+        # lo que repite: sus comentarios (no respuestas) en la narrativa que empuja, contados sin muletillas ni emojis
+        tf = rr[rr.narrativa == foco_id].texto.astype(str).str.strip() if foco_id else pd.Series([], dtype=str)
+        tf = tf[tf.str.split().str.len() >= 4]
+        kk = tf.map(clave)
+        tf, kk = tf[kk != ""], kk[kk != ""]
+        cuenta_k = kk.value_counts()
+        textos_op = []
+        for k_, v in cuenta_k.head(3).items():
+            vc = tf[kk == k_].value_counts()            # la variante más escrita de esa consigna; si empatan, la más corta
+            t = sorted(vc.index[vc.values == vc.values[0]], key=len)[0]
+            textos_op.append({"texto": t if len(t) <= 140 else t[:137].rstrip() + "…", "veces": int(v)})
+        rotulo = "Lo que más repiten" if len(cuenta_k) and cuenta_k.iloc[0] > 2 else "Ejemplos de lo que publican"
         lista_ops.append({
             "grupo": o.grupo, "cuentas": int(o.cuentas), "comentarios": int(len(sub)),
             "foco": foco_id, "foco_titulo": titulo,
@@ -83,12 +116,12 @@ def generar(df, nd, grupos, ops, cuentas_info, meta, salida: Path):
             "edad_dias": None if pd.isna(edad) else int(edad),
             "seguidores": None if info.seguidores.isna().all() else int(info.seguidores.median()),
             "respuestas_internas": entre,
-            "textos": [{"texto": t if len(t) <= 140 else t[:137].rstrip() + "…", "veces": int(v)}
-                       for t, v in (lambda t: t[t.str.split().str.len() >= 4])(sub[~sub.rep].texto.astype(str).str.strip())
-                       .value_counts().head(3).items()],
+            "textos": textos_op, "textos_rotulo": rotulo,
         })
 
-    data = {"meta": {**meta, "t0": t0, "t1": t1, "bin": BIN, "nb": nb}, "narrativas": narrs, "ops": lista_ops}
+    ruido_pct = round(float((df.n < 0).mean() * 100), 1) if len(df) else 0.0   # comentarios sin narrativa ("ninguna")
+    data = {"meta": {**meta, "t0": t0, "t1": t1, "bin": BIN, "nb": nb, "ruido_pct": ruido_pct, "narrativas_total": int(len(nd))},
+            "narrativas": narrs, "ops": lista_ops}
     plantilla = (Path(__file__).parent / "dashboard.html").read_text(encoding="utf-8")
     js = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")  # un texto con </script> no rompe la página
     salida.write_text(plantilla.replace("/*__DATA__*/null", js), encoding="utf-8")

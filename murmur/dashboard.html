@@ -160,6 +160,11 @@ const span = (M.t1 - M.t0);
 const xp = t => Math.max(0, Math.min(100, (t - M.t0) / (NB * M.bin) * 100));
 
 const N = DATA.narrativas, O = DATA.ops;
+// nombres para quien lee: "Operación 1" en vez del id interno "op01"
+const opNum = g => { const k = parseInt(String(g).replace(/\D/g, ""), 10); return isNaN(k) ? String(g) : String(k); };
+const opNombre = g => "Operación " + opNum(g);
+const antig = d => d == null ? "" : d <= 0 ? "creadas el mismo día en que empieza el período" : d === 1 ? "creadas 1 día antes" : d >= 730 ? `creadas unos ${Math.round(d / 365)} años antes` : `creadas ${fmt.format(d)} días antes`;
+const usd = v => "US$ " + (v ?? 0).toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 document.getElementById("lede").textContent =
   `${fmt.format(M.comentarios)} comentarios entre el ${dd(M.t0)} y el ${dd(M.t1)}. ${N.length} narrativas principales y ${O.length} operaciones coordinadas.`;
 const facts = [
@@ -167,18 +172,19 @@ const facts = [
   [N.length, "narrativas"],
   [O.length, "operaciones"],
   [M.cuentas_marcadas, "cuentas coordinadas"],
-  ["US$ " + (M.usd ?? 0).toFixed(2), "gasto en IA"],
+  ...(M.ruido_pct != null ? [[String(M.ruido_pct).replace(".", ",") + "%", "fuera de tema o ruido"]] : []),
+  [usd(M.usd), "gasto en IA"],
 ];
 // en un minuto: qué circula, desde cuándo y quién lo empuja, en palabras
 {
-  const top = N.slice(0, 3).map(n => `<li><b>${esc(n.titulo)}</b> <span class="num">(${fmt.format(n.total)}, ${Math.round(n.apoya / Math.max(1, n.total) * 100)}% apoya)</span></li>`).join("");
+  const top = N.slice(0, 3).map(n => `<li><b>${esc(n.titulo)}</b> <span class="num">(${fmt.format(n.total)} comentarios, ${Math.round(n.apoya / Math.max(1, n.total) * 100)}% la afirma)</span></li>`).join("");
   const em = N.filter(n => n.emergente).sort((a, b) => a.origen - b.origen);
   const ems = em.length ? em.map(n => `<li>Nace el <b>${dd(n.origen)} a las ${hh(n.origen)}</b>: ${esc(n.titulo)}</li>`).join("") : "<li>Ninguna narrativa principal nació dentro del período: todas ya circulaban al empezar.</li>";
   const opl = O.length ? O.map(o => { const pk = o.horas.indexOf(Math.max(...o.horas));
-      return `<li><b>${esc(o.grupo)}</b>: ${o.cuentas} cuentas${o.edad_dias != null ? ` de ${fmt.format(o.edad_dias)} días de antigüedad mediana` : ""}, pico a las ${String(pk).padStart(2, "0")} h${o.foco_titulo ? `, empuja “${esc(o.foco_titulo)}”` : ""}.</li>`; }).join("")
+      return `<li><b>${esc(opNombre(o.grupo))} (${o.cuentas} cuentas)</b>${o.edad_dias != null ? `, ${antig(o.edad_dias)}` : ""}; publica sobre todo a las ${String(pk).padStart(2, "0")} h${o.foco_titulo ? ` y empuja “${esc(o.foco_titulo)}”` : ""}.</li>`; }).join("")
     : "<li>No se detectaron operaciones coordinadas: ningún grupo de cuentas coincide una y otra vez.</li>";
   document.getElementById("minuto").innerHTML =
-    `<div><h3>Qué circula</h3><ul>${top}</ul></div><div><h3>Qué nació en el período</h3><ul>${ems}</ul></div><div><h3>Quién lo empuja</h3><ul>${opl}</ul></div>`;
+    `<div><h3>Qué circula <span class="num" style="font-weight:400">(las ${Math.min(3, N.length)} más grandes de ${N.length})</span></h3><ul>${top}</ul></div><div><h3>Qué nació en el período</h3><ul>${ems}</ul></div><div><h3>Quién lo empuja</h3><ul>${opl}</ul></div>`;
 }
 document.getElementById("facts").innerHTML = facts.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span class="eyebrow">${esc(l)}</span></div>`).join("");
 
@@ -209,12 +215,12 @@ N.forEach((n, i) => {
   const pa = Math.round(n.apoya / Math.max(1, n.total) * 100);
   const chips = [];
   if (n.emergente) chips.push(`<span class="chip em">Emergente</span>`);
-  n.empuja.forEach(e => chips.push(`<span class="chip op">Empujada por ${esc(e.grupo)}</span>`));
+  n.empuja.forEach(e => chips.push(`<span class="chip op">${esc(opNombre(e.grupo))} la ${e.postura === "rechaza" ? "refuta" : "afirma"}</span>`));
   const gridlines = days.map(t => `<line x1="${xp(t) * W / 100}" x2="${xp(t) * W / 100}" y1="0" y2="${H}" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
   html += `<div class="row">
     <div class="info">
       <div class="title">${esc(n.titulo)}</div>
-      <div class="sub"><span class="num">${fmt.format(n.total)}</span><span class="split" aria-hidden="true"><i class="a" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i></span><span class="num">${pa}% apoya</span><span>nace ${dd(n.origen)} ${hh(n.origen)}</span></div>
+      <div class="sub"><span class="num">${fmt.format(n.total)}</span><span class="split" aria-hidden="true"><i class="a" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i></span><span class="num">${pa}% la afirma, ${100 - pa}% la refuta</span><span>${n.emergente ? `nace ${dd(n.origen)} ${hh(n.origen)}` : "ya circulaba al empezar"}</span></div>
       ${chips.length ? `<div class="sub">${chips.join("")}</div>` : ""}
       ${n.ej_apoya ? `<div class="ej"><b class="ea">Afirma:</b> “${esc(n.ej_apoya)}”</div>` : ""}
       ${n.ej_rechaza ? `<div class="ej"><b class="er">Refuta:</b> “${esc(n.ej_rechaza)}”</div>` : ""}
@@ -264,7 +270,7 @@ board.querySelectorAll(".chart").forEach(el => {
 
 // tabla
 document.getElementById("tabla").innerHTML = `<thead><tr><th>Narrativa</th><th>Nace</th><th class="n">Total</th><th class="n">Apoya</th><th class="n">Rechaza</th><th>Frases clave</th></tr></thead><tbody>` +
-  N.map(n => `<tr><td>${esc(n.titulo)}</td><td class="n">${dd(n.origen)} ${hh(n.origen)}</td><td class="n">${fmt.format(n.total)}</td><td class="n">${fmt.format(n.apoya)}</td><td class="n">${fmt.format(n.rechaza)}</td><td>${n.claves.map(esc).join(", ")}</td></tr>`).join("") + `</tbody>`;
+  N.map(n => `<tr><td>${esc(n.titulo)}</td><td class="n">${n.emergente ? dd(n.origen) + " " + hh(n.origen) : "ya circulaba al empezar"}</td><td class="n">${fmt.format(n.total)}</td><td class="n">${fmt.format(n.apoya)}</td><td class="n">${fmt.format(n.rechaza)}</td><td>${n.claves.map(esc).join(", ")}</td></tr>`).join("") + `</tbody>`;
 
 // operaciones
 const ops = document.getElementById("ops");
@@ -273,15 +279,15 @@ ops.innerHTML = O.length ? O.map(o => {
   const bars = o.horas.map((v, h) => `<i class="${v ? "" : "z"}" data-h="${h}" data-v="${v}" style="height:${Math.max(2, v / hmax * 100)}%"></i>`).join("");
   const peak = o.horas.indexOf(hmax);
   return `<article class="opcard">
-    <div class="ophead"><span class="opname">${esc(o.grupo)}</span><span class="eyebrow num">${o.cuentas} cuentas · ${fmt.format(o.comentarios)} comentarios</span></div>
-    <div class="opfoco">${o.foco_titulo ? `Empuja <em>“${esc(o.foco_titulo)}”</em>, con el ${Math.round(o.foco_pct * 100)}% de sus comentarios propios.` : "Sin foco en una narrativa."}</div>
+    <div class="ophead"><span class="opname">${esc(opNombre(o.grupo))}</span><span class="eyebrow num">${o.cuentas} cuentas · ${fmt.format(o.comentarios)} comentarios</span></div>
+    <div class="opfoco">${o.foco_titulo ? `Empuja <em>“${esc(o.foco_titulo)}”</em>, con el ${Math.round(o.foco_pct * 100)}% de lo que publica (sin contar respuestas).` : "Sin foco en una narrativa."}</div>
     <div class="hours"><span class="eyebrow">A qué hora publican · pico ${String(peak).padStart(2, "0")} h</span>
       <div class="bars" data-op="${esc(o.grupo)}">${bars}</div>
       <div class="hax"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
-    ${o.textos && o.textos.length ? `<div class="optext"><span class="eyebrow">Lo que más repiten</span>${o.textos.map(t => `<div><q>${esc(t.texto)}</q> <span class="num">×${fmt.format(t.veces)}</span></div>`).join("")}</div>` : ""}
+    ${o.textos && o.textos.length ? `<div class="optext"><span class="eyebrow">${esc(o.textos_rotulo || "Lo que más repiten")}</span>${o.textos.map(t => `<div><q>${esc(t.texto)}</q> <span class="num">×${fmt.format(t.veces)}</span></div>`).join("")}</div>` : ""}
     <div class="evid">
       <div><b>${o.respuestas_internas}</b><small>respuestas entre ellas</small></div>
-      <div><b>${o.edad_dias == null ? "—" : fmt.format(o.edad_dias) + " d"}</b><small>antigüedad mediana de las cuentas</small></div>
+      <div><b>${o.edad_dias == null ? "—" : o.edad_dias <= 0 ? "mismo día" : o.edad_dias >= 730 ? Math.round(o.edad_dias / 365) + " años" : fmt.format(o.edad_dias) + " días"}</b><small>${o.edad_dias == null ? "antigüedad de las cuentas" : "cuentas " + antig(o.edad_dias) + " (mediana)"}</small></div>
       <div><b>${o.seguidores == null ? "—" : fmt.format(o.seguidores)}</b><small>seguidores (mediana)</small></div>
     </div>
   </article>`;
