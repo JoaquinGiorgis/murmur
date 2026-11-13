@@ -99,6 +99,14 @@ def main():
                     grupos, ops = grupos2, ops2
             except Exception as e:
                 log(f"  AVISO: no se pudieron rescatar núcleos alineados ({e!r}); queda lo anterior")
+        if coordinacion.RAFAGAS:
+            try:  # si falla, queda el cuentas.csv que ya está escrito
+                grupos2, ops2, n_raf = coordinacion.rafagas_alineadas(c, grupos, ops, df.n.values, df.s.values, E, kid, log=log)
+                if n_raf:
+                    grupos2.to_csv(a.entrega / "cuentas.csv", index=False)
+                    grupos, ops = grupos2, ops2
+            except Exception as e:
+                log(f"  AVISO: no se pudieron buscar ráfagas alineadas ({e!r}); queda lo anterior")
         if coordinacion.ALIN_PUBS > 0:
             try:  # si falla, queda el cuentas.csv que ya está escrito
                 grupos2, ops2, n_ali = coordinacion.sumar_alineados(c, grupos, ops, df.n.values, df.s.values, log=log)

@@ -338,3 +338,92 @@ def rescatar_nucleos(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, n
         ops = pd.DataFrame(filas)
     log(f"  núcleos alineados rescatados: {len(set(nuevos.values()))} operaciones, {len(nuevos)} cuentas")
     return grupos, ops, len(nuevos)
+
+
+# --- ráfagas alineadas: operaciones de cuentas con tan poca actividad que no llegan a formar pares sospechosos
+RAFAGAS = True    # True: usa VENTANA, SAT_SIM, ALIN_NUC, ALIN_PUBS, ALIN_FRAC, TAM_MIN y TAM_MAX_FRAC (ningún número nuevo)
+
+
+def rafagas_alineadas(c: pd.DataFrame, grupos: pd.DataFrame, ops: pd.DataFrame, narr, lado, E, kid, log=print):
+    """Arma operaciones sin pasar por el grafo de pares: cuentas que repiten juntas el mismo texto del mismo lado.
+
+    Un comentario está "en ráfaga" si a menos de VENTANA, en la misma publicación y con la misma narrativa y lado,
+    hay comentarios casi iguales (coseno >= SAT_SIM, >= 4 palabras) de al menos ALIN_NUC cuentas distintas. Una
+    cuenta queda si eso le pasa en al menos ALIN_PUBS publicaciones (y ALIN_FRAC de las suyas), contando solo a las
+    cuentas que también quedan (se itera hasta que no cambia). Los sobrevivientes se agrupan por quién repite con
+    quién. La masa genuina que usa las mismas plantillas, cuando aparece, forma un solo grupo enorme y se descarta
+    con el mismo tope de siempre (TAM_MAX_FRAC); las operaciones son grupos chicos y cerrados. Un grupo que toca
+    una operación ya detectada le suma sus cuentas; uno que no toca ninguna es una operación nueva.
+    """
+    if not RAFAGAS or not len(c):
+        return grupos, ops, 0
+    narr, lado = np.asarray(narr), np.asarray(lado)
+    ts, cuenta, pub = c.ts.values, c.cuenta_id.values, c.publicacion_id.values
+    nw = c.texto.fillna("").str.split().str.len().values
+    npub = c.groupby("cuenta_id").publicacion_id.nunique()
+    sirve = (narr >= 0) & (nw >= 4)
+    clave = narr * 3 + lado + 1
+    vec = {}   # comentario -> cuentas distintas con texto casi igual, cerca en el tiempo
+    for _, ii in pd.Series(np.nonzero(sirve)[0]).groupby([pub[sirve], clave[sirve]]):
+        ii = ii.values
+        if len(ii) <= ALIN_NUC:
+            continue
+        ii = ii[np.argsort(ts[ii], kind="stable")]
+        t = ts[ii]
+        lo = np.searchsorted(t, t - VENTANA, "left"); hi = np.searchsorted(t, t + VENTANA, "right")
+        for j in np.nonzero(hi - lo > ALIN_NUC)[0]:
+            jj = ii[lo[j]:hi[j]]
+            cer = jj[((E[kid[jj]] @ E[kid[ii[j]]]) >= SAT_SIM) & (cuenta[jj] != cuenta[ii[j]])]
+            if len(cer) >= ALIN_NUC:
+                vec[ii[j]] = set(cuenta[cer])
+    vivos = None
+    while True:
+        pubs = defaultdict(set)
+        for i, cs in vec.items():
+            if vivos is not None and cuenta[i] not in vivos:
+                continue
+            if len(cs if vivos is None else cs & vivos) >= ALIN_NUC:
+                pubs[cuenta[i]].add(pub[i])
+        ok = {cu for cu, ps in pubs.items() if len(ps) >= max(ALIN_PUBS, ALIN_FRAC * npub[cu], 1)}
+        if ok == vivos or len(ok) < TAM_MIN:
+            break
+        vivos = ok
+    if len(ok) < TAM_MIN:
+        log("  ráfagas alineadas: nada")
+        return grupos, ops, 0
+    padre = {u: u for u in ok}
+    def raiz(u):
+        while padre[u] != u:
+            padre[u] = padre[padre[u]]; u = padre[u]
+        return u
+    for i, cs in vec.items():
+        if cuenta[i] in ok:
+            for v in cs & ok:
+                padre[raiz(cuenta[i])] = raiz(v)
+    comp = defaultdict(set)
+    for u in sorted(ok):
+        comp[raiz(u)].add(u)
+    g = dict(zip(grupos.cuenta_id, grupos.grupo))
+    tope = TAM_MAX_FRAC * c.cuenta_id.nunique()
+    filas = ops.to_dict("records") if len(ops) else []
+    nuevos = {}
+    for miembros in sorted(comp.values(), key=lambda m: (-len(m), min(m))):
+        if len(miembros) < TAM_MIN or len(miembros) > tope:
+            continue
+        de_op = pd.Series([g.get(u, "") for u in miembros])
+        de_op = de_op[de_op != ""]
+        if len(de_op):
+            nombre = de_op.value_counts().index[0]
+        else:
+            nombre = f"op{len(filas) + 1:02d}"
+            filas.append({"grupo": nombre, "cuentas": len(miembros), "grado_medio": 0.0, "densidad": 0.0})
+        for u in miembros:
+            if not g.get(u, ""):
+                nuevos[u] = nombre
+    if nuevos:
+        grupos = grupos.copy()
+        grupos["grupo"] = [nuevos.get(cu, gr) for cu, gr in zip(grupos.cuenta_id, grupos.grupo)]
+        ops = pd.DataFrame(filas)
+        ops["cuentas"] = ops.grupo.map(grupos[grupos.grupo != ""].groupby("grupo").size()).astype(int)
+    log(f"  ráfagas alineadas: {len(nuevos)} cuentas nuevas en {len(set(nuevos.values()))} operaciones")
+    return grupos, ops, len(nuevos)
