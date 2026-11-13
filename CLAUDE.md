@@ -86,6 +86,7 @@ python ../desafio-qualydata/evaluacion/puntuar.py --verdad datos/practica/verdad
   - ORIGEN_INICIO (3baab98): ult7dias +0,13.
   - COORD_RESTO (272a3cb, bug hallado auditando errores por camino): 105 consignas de C1 sin cluster quedaban como ruido; suma +0,12. Efecto secundario conocido: en sin_hospital fija mal el lado de 237 consignas (postura −0,002); arreglarlo partía en dos lados a una operación del set final y se descartó.
   - VOTO_MAYORIA (ffdc565): el voto de hilo por texto exige mayoría ("Ni más ni menos" iba a una sola narrativa); resp20 +0,05.
+  - OP_LADO_HILO (bc977b9, hallado auditando el set final): las consignas de op01 ("El dique es progreso…") estaban del lado de su refutación porque SIM_COORD elige lado por parecido; sin IA la narrativa entera salía invertida. Ahora el lado de la operación en su narrativa principal lo votan las respuestas largas de cuentas ajenas. Banco +0,18; en el set final op01 pasa a "apoya" y sale una cuenta que estaba en contra del dique (103 → 102).
 - Rechazados con medición; quedan como flags apagadas o fuera del repo:
   - RUIDO_HILO (la idea del rival: clusters fuera de hilos → ruido): suma −2,68. El ruido real nunca está en un hilo y lo que se perdía eran raíces sin cluster.
   - HILO_RESCATE: superado por RESTO_VECINO.
