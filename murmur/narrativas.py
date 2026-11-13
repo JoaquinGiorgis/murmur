@@ -46,7 +46,8 @@ TASA_RELATIVA = True          # si el set responde menos que práctica, el umbra
 RUIDO_ALARMA = 0.35   # solo avisa; no cambia la salida
 RUIDO_HILO = 0.0      # 0 = apagado. Un cluster fino pasa a ruido si la parte de sus comentarios que está en un hilo (es
                       # respuesta o recibió respuesta) es menor que RUIDO_HILO veces la del set entero (relativo, no absoluto)
-FRAG_VECINO = False   # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
+FRAG_VARIANTES = 3    # con FRAG_VECINO: cuántas variantes parecidas de un mismo lado se promedian (1 = la más parecida sola)
+FRAG_VECINO = True    # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
                       # parecida, no al promedio de todo el lado: el promedio de una narrativa grande y variada queda lejos
                       # de cada variante y una narrativa chica y compacta del mismo tema se la lleva
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
@@ -376,11 +377,24 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
             mg = base & np.isin(cn, list(grandes)) & (F >= 0)
             tri = pd.DataFrame({"f": F[mg], "n": cn[mg], "s": cs[mg]})
             dom = tri.groupby("f")[["n", "s"]].agg(lambda v: v.mode().iat[0])   # narrativa y lado mayoritarios de cada cluster fino
-            if len(dom):
+            if len(dom) and FRAG_VARIANTES <= 1:
                 kg = [(int(a), int(b)) for a, b in zip(dom.n, dom.s)]
                 Cg = cent[dom.index.values]
+            elif len(dom):
+                # una sola variante parecida puede ser una muletilla ("es mentira", "es falso") compartida entre temas:
+                # el puntaje de cada lado es el promedio de sus FRAG_VARIANTES variantes más parecidas al fragmento
+                claves_v = [(int(a), int(b)) for a, b in zip(dom.n, dom.s)]
+                kg = sorted(set(claves_v))
+                Cg = None
         kc, Cc = centroides(base & np.isin(cn, list(chicas)))
-        S = Cc @ Cg.T
+        if Cg is not None:
+            S = Cc @ Cg.T
+        else:
+            Sv = Cc @ cent[dom.index.values].T
+            S = np.full((len(kc), len(kg)), -1.0, np.float32)
+            for j, kk in enumerate(kg):
+                cols = [q for q, cv in enumerate(claves_v) if cv == kk]
+                S[:, j] = np.sort(Sv[:, cols], axis=1)[:, -FRAG_VARIANTES:].mean(1)
         destino = {kc[i]: kg[int(S[i].argmax())] for i in range(len(kc)) if S[i].max() >= SIM_FRAG}
         for i in np.nonzero(np.isin(cn, list(chicas)))[0]:
             k = (cn[i], cs[i])
