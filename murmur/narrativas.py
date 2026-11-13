@@ -51,6 +51,9 @@ FRAG_VARIANTES = 3    # con FRAG_VECINO: cuántas variantes parecidas de un mism
 FRAG_VECINO = True    # True: el fragmento se une al lado de la narrativa grande que tiene la variante (cluster fino) más
                       # parecida, no al promedio de todo el lado: el promedio de una narrativa grande y variada queda lejos
                       # de cada variante y una narrativa chica y compacta del mismo tema se la lleva
+ORIGEN_INICIO = True  # True: si desde la ventana que dispara el umbral se llega hacia atrás, sin silencios de más de
+                      # ORIGEN_VENTANA, hasta las primeras ORIGEN_VENTANA del set, la narrativa ya estaba activa cuando empiezan
+                      # los datos y su origen es su primer comentario (el umbral tarda en juntarse de madrugada)
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
@@ -422,6 +425,7 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
 
     filas = []
     tokdf = []
+    t_inicio = int(c.ts.min()) if N else 0
     for n, gd in df[df.n >= 0].groupby("n"):
         gb = gd[~gd.extra] if gd.extra.any() and not gd.extra.all() else gd
         s1, s2 = (gb.s == 1).sum(), (gb.s == -1).sum()
@@ -436,6 +440,12 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
         j = np.searchsorted(ts, ts + ORIGEN_VENTANA, side="right") - np.arange(len(ts))
         hit = np.nonzero(j >= thr)[0]
         origen = int(ts[hit[0]] if len(hit) else ts[0])
+        if ORIGEN_INICIO and len(hit):
+            k_ = hit[0]
+            while k_ > 0 and ts[k_] - ts[k_ - 1] <= ORIGEN_VENTANA:
+                k_ -= 1
+            if ts[k_] - t_inicio <= ORIGEN_VENTANA:
+                origen = int(ts[k_])
         filas.append({"n": n, "apo": apo, "metodo_postura": metodo, "origen": origen, "comentarios": len(gd)})
     nd = pd.DataFrame(filas, columns=["n", "apo", "metodo_postura", "origen", "comentarios"])
     if _ancla is not None and len(nd):
