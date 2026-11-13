@@ -27,6 +27,12 @@ Un solo comando, de punta a punta. Deja en `entrega/` exactamente los cuatro arc
 - `--cache .murmur`: dónde quedan la base DuckDB y la caché de embeddings. Por defecto es `.murmur/`.
 - IA opcional: con `ANTHROPIC_API_KEY` en el entorno, se hacen **8 llamadas por narrativa** (unas 100 en total) para decidir qué lado afirma y para nombrarla. Sin clave, o con `--sin-ia`, corre igual con heurísticos. El modelo se cambia con `MURMUR_LLM_MODELO`, y los precios para `costo.json` con `MURMUR_USD_MTOK_IN` y `MURMUR_USD_MTOK_OUT` (por defecto, los de Claude Haiku 5.5: USD 0,10 y 0,50 por millón de tokens). Si la API falla, reintenta con espera creciente; si sigue fallando, avisa en el log y en `costo.json` y termina sin IA, sin colgarse.
 
+Para el set final hay un guion que corre, valida el formato contra la entrada (mismos ids, posturas válidas, fechas con zona horaria), revisa que no haya claves en `entrega/` e imprime los comandos de git para pushear después de mirar el resultado:
+
+```bash
+bash scripts/viernes.sh sin-ia     # o con-ia, con ANTHROPIC_API_KEY exportada
+```
+
 Para medirse contra el set de práctica:
 
 ```bash
@@ -168,7 +174,7 @@ GROUP BY ALL ORDER BY de_operaciones DESC LIMIT 10;
 
 - **Ingesta:** Parquet particionado por día en almacenamiento de objetos. DuckDB lo lee igual, y la misma lógica SQL pasa a ClickHouse si hay que servir consultas en tiempo real.
 - **Embeddings:** es la única etapa cara y es lineal en *textos únicos*, no en comentarios. Con la caché, el costo diario es solo lo nuevo, y se paraleliza trivialmente (por lotes, con GPU o un servicio de embeddings).
-- **Narrativas:** se ajustan los clusters una vez por día y los comentarios nuevos se asignan por similitud al centroide más cercano, que es barato. Las respuestas siguen cosiendo y heredando en línea.
+- **Narrativas:** se ajustan los clusters una vez por día y los comentarios nuevos se asignan por similitud al centroide más cercano, que es barato. Las respuestas siguen cosiendo y heredando en línea. Si el tiempo pesa más que medio punto, `narrativas.UMAP_COMPAT = False` activa el modo paralelo de UMAP: medido, es unas 4,8 veces más rápido (449 s → 94 s en práctica) y cuesta 0,4 puntos en práctica, así que queda apagado por defecto.
 - **Coordinación:** el grafo de co-acción se actualiza con ventanas deslizantes; las matrices son ralas y se pueden acumular por día.
 - **IA:** el costo es fijo por narrativa (8 llamadas cada una), no por comentario, así que no crece con el volumen.
 
