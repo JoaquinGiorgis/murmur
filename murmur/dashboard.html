@@ -1,126 +1,189 @@
 <title>murmur</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="color-scheme" content="light">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: franja de resumen, luego "qué circula" como filas espejadas (apoya arriba, rechaza abajo)
-   sobre un eje de tiempo compartido, y "quién lo empuja" como fichas de operación. */
+/* Liquid glass, modo claro: fondo con manchas de color fijas, paneles translúcidos con borde de refracción.
+   Layout: encabezado, resumen en un minuto (bento), "qué circula" como filas espejadas
+   (apoya arriba, rechaza abajo) sobre un eje de tiempo compartido, y "quién lo empuja" como fichas. */
 :root {
-  --bg: #f6f7f9; --panel: #ffffff; --ink: #12151c; --muted: #5b6270; --faint: #8a91a0;
-  --line: #e2e5eb; --grid: #eef0f3;
-  --apoya: #2a78d6; --apoya-fill: rgba(42,120,214,.26);
-  --rechaza: #eb6834; --rechaza-fill: rgba(235,104,52,.26);
-  --op: #6250d6; --op-soft: rgba(98,80,214,.10);
-  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --f-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+  --bg: #f4f5f8; --ink: #14171f; --muted: #545c6b; --faint: #8a91a0;
+  --line: rgba(20,23,31,.08); --grid: rgba(20,23,31,.06);
+  --glass: rgba(255,255,255,.62); --glass-strong: rgba(255,255,255,.80);
+  --glass-edge: rgba(255,255,255,.85);
+  --shadow: 0 1px 1px rgba(30,41,59,.04), 0 12px 32px -12px rgba(30,41,59,.14);
+  --apoya: #2f6fd1; --apoya-fill: rgba(47,111,209,.22);
+  --rechaza: #e0662f; --rechaza-fill: rgba(224,102,47,.22);
+  --op: #0f8a6c; --op-soft: rgba(15,138,108,.10);
+  --radius: 22px;
+  --f-display: "Geist", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Geist", "Segoe UI", system-ui, sans-serif;
+  --f-data: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --ease: cubic-bezier(.16, 1, .3, 1);
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #111318; --panel: #181b22; --ink: #eef0f4; --muted: #a3a9b6; --faint: #7d8492;
-  --line: #2a2f39; --grid: #20242c;
-  --apoya: #3987e5; --apoya-fill: rgba(57,135,229,.30);
-  --rechaza: #d95926; --rechaza-fill: rgba(217,89,38,.32);
-  --op: #9085e9; --op-soft: rgba(144,133,233,.14); color-scheme: dark } }
-:root[data-theme="dark"] {
-  --bg: #111318; --panel: #181b22; --ink: #eef0f4; --muted: #a3a9b6; --faint: #7d8492;
-  --line: #2a2f39; --grid: #20242c;
-  --apoya: #3987e5; --apoya-fill: rgba(57,135,229,.30);
-  --rechaza: #d95926; --rechaza-fill: rgba(217,89,38,.32);
-  --op: #9085e9; --op-soft: rgba(144,133,233,.14); color-scheme: dark }
-body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
-.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); -webkit-font-smoothing: antialiased; }
+
+/* fondo: manchas de color suaves, fijas y sin eventos (no repinta al hacer scroll) */
+.aura { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.aura i { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .55; }
+.aura i:nth-child(1) { width: 46vw; height: 46vw; left: -12vw; top: -14vw; background: #cfe0fb; }
+.aura i:nth-child(2) { width: 38vw; height: 38vw; right: -10vw; top: 8vh; background: #fde3d3; }
+.aura i:nth-child(3) { width: 42vw; height: 42vw; left: 30vw; bottom: -22vw; background: #d5f0e7; }
+
+.glass { background: var(--glass); border: 1px solid var(--glass-edge); border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.9);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
+
+.wrap { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; padding-block: 32px 64px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 36px; }
-h1, h2 { font-family: var(--f-display); font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
-h1 { font-size: 2.1rem; line-height: 1.05; }
-h2 { font-size: 1.35rem; }
-.lede { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
-.eyebrow { font: 500 .72rem/1 var(--f-data); text-transform: uppercase; letter-spacing: .09em; color: var(--faint); }
+  display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(1.8rem, 3.2vw, 2.6rem); font-weight: 700; line-height: 1.04; letter-spacing: -.035em; }
+h2 { font-size: 1.4rem; font-weight: 600; letter-spacing: -.02em; }
+.lede { color: var(--muted); margin: 8px 0 0; max-width: 64ch; }
+.eyebrow { font: 500 .7rem/1.2 var(--f-data); text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
 .num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
 
-/* resumen */
-.top { display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: flex-end; justify-content: space-between; }
-.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; }
-.fact { display: grid; gap: 4px; }
-.fact b { font: 500 1.35rem/1 var(--f-data); font-variant-numeric: tabular-nums; }
+/* entrada escalonada */
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.reveal { animation: rise .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+@media (prefers-reduced-motion: reduce) { .reveal, .live i { animation: none !important; } }
+
+/* encabezado */
+.top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px 40px; align-items: end; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; }
+.mark svg { width: 22px; height: 22px; }
+.brand b { font: 600 1.05rem/1 var(--f-display); letter-spacing: -.02em; }
+.live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px; font: 500 .68rem/1 var(--f-data);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--op); background: var(--op-soft); }
+.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--op); animation: pulse 2.4s ease-in-out infinite; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fact { padding: 14px 16px; display: grid; gap: 8px; transition: transform .35s var(--ease); }
+.fact:hover { transform: translateY(-2px); }
+.fact .ic { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(20,23,31,.05); color: var(--muted); }
+.fact .ic svg { width: 16px; height: 16px; }
+.fact b { font: 500 1.45rem/1 var(--f-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* resumen en un minuto: bento asimétrico */
+.minuto { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.minuto > div { padding: 20px 22px; }
+.minuto h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: .78rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); font-weight: 600; font-family: var(--f-data); }
+.minuto h3 .dot { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; }
+.minuto h3 .dot svg { width: 14px; height: 14px; }
+.minuto ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: .93rem; line-height: 1.4; }
+.minuto li { padding-left: 14px; position: relative; }
+.minuto li::before { content: ""; position: absolute; left: 0; top: .6em; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.d-a { background: rgba(47,111,209,.12); color: var(--apoya); }
+.d-n { background: rgba(20,23,31,.06); color: var(--ink); }
+.d-o { background: var(--op-soft); color: var(--op); }
+
+/* encabezados de sección */
+.sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
+.sec-title { display: flex; align-items: center; gap: 12px; }
+.sec-title .badge { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: none; }
+.sec-title .badge svg { width: 18px; height: 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 8px; font-size: .8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; background: var(--glass-strong); border: 1px solid var(--glass-edge); }
+.sw { width: 12px; height: 8px; border-radius: 2px; display: inline-block; }
+.sw.a { background: var(--apoya); } .sw.r { background: var(--rechaza); }
+.sw.o { width: 2px; height: 12px; background: var(--ink); border-radius: 0; }
 
 /* qué circula */
-.sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .82rem; color: var(--muted); }
-.legend span { display: inline-flex; align-items: center; gap: 7px; }
-.sw { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
-.sw.a { background: var(--apoya); } .sw.r { background: var(--rechaza); }
-.sw.o { width: 2px; height: 14px; background: var(--ink); border-radius: 0; }
-.board { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.row { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 0 22px; padding: 14px 18px; border-top: 1px solid var(--line); }
+.board { overflow: hidden; }
+/* el panel largo no lleva backdrop-filter: en elementos muy altos el navegador lo pinta en blanco */
+.board.glass, details.glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(255,255,255,.82); }
+.row { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 0 24px; padding: 16px 22px; border-top: 1px solid var(--line);
+  transition: background .3s var(--ease); }
 .row:first-child { border-top: 0; }
-.axisrow { padding-block: 10px 6px; background: var(--panel); }
-.info { min-width: 0; display: grid; gap: 5px; align-content: start; }
-.title { font-weight: 600; line-height: 1.3; }
-.sub { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .8rem; color: var(--muted); align-items: center; }
-.split { display: flex; height: 4px; border-radius: 2px; overflow: hidden; width: 120px; gap: 2px; }
-.split i { display: block; height: 100%; }
+.row:not(.axisrow):hover { background: rgba(255,255,255,.55); }
+.axisrow { padding-block: 12px 8px; background: rgba(255,255,255,.35); }
+.info { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.title { font-weight: 600; line-height: 1.3; letter-spacing: -.01em; }
+.sub { display: flex; flex-wrap: wrap; gap: 5px 10px; font-size: .8rem; color: var(--muted); align-items: center; }
+.split { display: flex; height: 5px; border-radius: 3px; overflow: hidden; width: 120px; gap: 2px; }
+.split i { display: block; height: 100%; border-radius: 3px; }
 .split .a { background: var(--apoya); } .split .r { background: var(--rechaza); }
-.chip { font: 500 .7rem/1 var(--f-data); letter-spacing: .04em; padding: 4px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-.chip.em { color: var(--ink); border-color: var(--faint); }
-.chip.op { color: var(--op); border-color: var(--op); background: var(--op-soft); }
-.keys { font: .76rem/1.4 var(--f-data); color: var(--faint); }
-.chart { position: relative; min-width: 0; height: 72px; cursor: crosshair; }
+.chip { font: 500 .68rem/1 var(--f-data); letter-spacing: .04em; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; background: rgba(255,255,255,.6); }
+.chip.em { color: var(--ink); border-color: rgba(20,23,31,.18); }
+.chip.op { color: var(--op); border-color: rgba(15,138,108,.35); background: var(--op-soft); }
+.keys { font: .74rem/1.45 var(--f-data); color: var(--faint); }
+.chart { position: relative; min-width: 0; height: 76px; cursor: crosshair; border-radius: 12px; }
 .chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .chart .cross { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--muted); pointer-events: none; }
-.axis { position: relative; height: 18px; font: .7rem/1 var(--f-data); color: var(--faint); }
+.axis { position: relative; height: 18px; font: .68rem/1 var(--f-data); color: var(--faint); }
 .axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; font-size: .8rem; box-shadow: 0 6px 24px rgba(0,0,0,.14); min-width: 170px; }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--glass-strong); color: var(--ink); border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+  border-radius: 12px; padding: 9px 12px; font-size: .8rem; box-shadow: 0 12px 32px -10px rgba(30,41,59,.25); min-width: 170px; }
 .tip .l { display: flex; justify-content: space-between; gap: 14px; align-items: center; }
 .tip .l span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 
 /* quién lo empuja */
-.ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-.opcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; align-content: start; }
-.ophead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.opname { font: 700 1.25rem/1 var(--f-display); color: var(--op); }
-.opfoco { font-size: .92rem; }
-.opfoco em { font-style: normal; font-weight: 600; }
-.hours { display: grid; gap: 4px; }
-.bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 54px; align-items: end; }
-.bars i { display: block; background: var(--op); border-radius: 2px 2px 0 0; min-height: 1px; }
+.ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.opcard { padding: 22px; display: grid; gap: 16px; align-content: start; transition: transform .4s var(--ease), box-shadow .4s var(--ease); }
+.opcard:hover { transform: translateY(-3px); box-shadow: 0 1px 1px rgba(30,41,59,.04), 0 22px 44px -16px rgba(30,41,59,.22), inset 0 1px 0 rgba(255,255,255,.9); }
+.ophead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 10px; }
+.opname { white-space: nowrap; }
+.opname { display: inline-flex; align-items: center; gap: 10px; font: 600 1.2rem/1 var(--f-display); letter-spacing: -.02em; color: var(--ink); }
+.opname .badge { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--op-soft); color: var(--op); }
+.opname .badge svg { width: 16px; height: 16px; }
+.opfoco { font-size: .92rem; color: var(--muted); }
+.opfoco em { font-style: normal; font-weight: 600; color: var(--ink); }
+.hours { display: grid; gap: 6px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,.5); border: 1px solid var(--line); }
+.bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 56px; align-items: end; }
+.bars i { display: block; background: linear-gradient(180deg, #2fb08f, var(--op)); border-radius: 3px 3px 1px 1px; min-height: 1px; transition: opacity .2s; }
+.bars i:hover { opacity: .7; }
 .bars i.z { background: var(--grid); }
-.hax { display: flex; justify-content: space-between; font: .68rem/1 var(--f-data); color: var(--faint); }
-.evid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
-.evid div { display: grid; gap: 3px; }
-.evid b { font: 500 1rem/1 var(--f-data); }
-.evid small { color: var(--muted); font-size: .72rem; line-height: 1.25; }
-details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.hax { display: flex; justify-content: space-between; font: .66rem/1 var(--f-data); color: var(--faint); }
+.evid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.evid div { display: grid; gap: 4px; }
+.evid b { font: 500 1.05rem/1 var(--f-data); }
+.evid small { color: var(--muted); font-size: .72rem; line-height: 1.3; }
+details { padding: 14px 20px; }
 summary { cursor: pointer; font-weight: 600; }
 summary:focus-visible, .chart:focus-visible { outline: 2px solid var(--apoya); outline-offset: 2px; }
-.tablewrap { overflow-x: auto; margin-top: 10px; }
+.tablewrap { overflow-x: auto; margin-top: 12px; }
 table { border-collapse: collapse; width: 100%; font-size: .82rem; }
-th, td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 500; }
 td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.foot { color: var(--faint); font-size: .78rem; }
-.minuto { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.minuto > div { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-.minuto h3 { margin: 0 0 8px; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.minuto ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: .92rem; line-height: 1.35; }
-.ej { font-size: .82rem; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+.foot { color: var(--faint); font-size: .78rem; display: flex; align-items: center; gap: 8px; }
+.ej { font-size: .82rem; color: var(--muted); line-height: 1.4; margin-top: 2px; padding: 7px 10px; border-radius: 10px; background: rgba(255,255,255,.55); border-left: 2px solid var(--line); }
+.ej.a { border-left-color: var(--apoya); } .ej.r { border-left-color: var(--rechaza); }
 .ej b { font-weight: 600; }
 .ej .ea { color: var(--apoya); } .ej .er { color: var(--rechaza); }
-.optext { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+.optext { display: grid; gap: 6px; font-size: .82rem; color: var(--muted); }
+.optext div { padding: 7px 10px; border-radius: 10px; background: rgba(255,255,255,.55); border: 1px solid var(--line); }
 .optext q { color: var(--ink); }
-@media (max-width: 760px) { .minuto { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .top { grid-template-columns: minmax(0, 1fr); }
+  .minuto { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 760px) {
-  .row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }
   .axisrow .info { display: none; }
-  h1 { font-size: 1.7rem; }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .glass { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 }
 </style>
 
+<div class="aura" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="wrap">
   <header class="top">
-    <div>
-      <div class="eyebrow">murmur · narrativas y coordinación</div>
+    <div class="reveal" style="--i:0">
+      <div class="brand">
+        <span class="mark glass" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M3 12h1.5M7 8v8M10.5 5v14M14 9v6M17.5 7v10M21 12h0"/></svg></span>
+        <b>murmur</b>
+        <span class="live"><i></i>set final</span>
+      </div>
+      <div class="eyebrow">narrativas y coordinación</div>
       <h1 id="h1">Qué se dice y quién lo está armando</h1>
       <p class="lede" id="lede"></p>
     </div>
@@ -129,19 +192,24 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-alig
 
   <section class="minuto" id="minuto" aria-label="Resumen en un minuto"></section>
 
-  <section style="display:grid;gap:14px">
-    <div class="sec-head">
-      <div><h2>Qué circula y desde cuándo</h2>
-        <p class="lede">Cada fila es una narrativa. Arriba de la línea, quienes la afirman; abajo, quienes la refutan. Volumen cada 6 horas, misma escala para todas.</p></div>
+  <section style="display:grid;gap:16px">
+    <div class="sec-head reveal" style="--i:2">
+      <div class="sec-title">
+        <span class="badge glass" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="var(--apoya)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 8-9"/><path d="M15 6h5v5"/></svg></span>
+        <div><h2>Qué circula y desde cuándo</h2>
+        <p class="lede" style="margin-top:4px">Cada fila es una narrativa. Arriba de la línea, quienes la afirman; abajo, quienes la refutan. Volumen cada 6 horas, misma escala para todas.</p></div>
+      </div>
       <div class="legend"><span><i class="sw a"></i>Apoya</span><span><i class="sw r"></i>Rechaza</span><span><i class="sw o"></i>Nace</span></div>
     </div>
-    <div class="board" id="board"></div>
-    <details><summary>Ver como tabla</summary><div class="tablewrap"><table id="tabla"></table></div></details>
+    <div class="board glass reveal" style="--i:3" id="board"></div>
+    <details class="glass"><summary>Ver como tabla</summary><div class="tablewrap"><table id="tabla"></table></div></details>
   </section>
 
-  <section style="display:grid;gap:14px">
-    <div class="sec-head"><div><h2>Quién lo empuja</h2>
-      <p class="lede">Grupos de cuentas que coinciden una y otra vez en las mismas publicaciones, en minutos, y se responden entre sí.</p></div></div>
+  <section style="display:grid;gap:16px">
+    <div class="sec-head reveal" style="--i:4"><div class="sec-title">
+      <span class="badge glass" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="var(--op)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="12" cy="17" r="2.5"/><path d="M8.2 8.3l2.6 6.4M15.8 8.3l-2.6 6.4M8.5 7h7"/></svg></span>
+      <div><h2>Quién lo empuja</h2>
+      <p class="lede" style="margin-top:4px">Grupos de cuentas que coinciden una y otra vez en las mismas publicaciones, en minutos, y se responden entre sí. Coordinación detectada para revisión, no una acusación.</p></div></div></div>
     <div class="ops" id="ops"></div>
   </section>
   <p class="foot" id="foot"></p>
@@ -184,9 +252,19 @@ const facts = [
       return `<li><b>${esc(opNombre(o.grupo))} (${o.cuentas} cuentas)</b>${o.edad_dias != null ? `, ${antig(o.edad_dias)}` : ""}; publica sobre todo a las ${String(pk).padStart(2, "0")} h${o.foco_titulo ? ` y empuja “${esc(o.foco_titulo)}”` : ""}.</li>`; }).join("")
     : "<li>No se detectaron operaciones coordinadas: ningún grupo de cuentas coincide una y otra vez.</li>";
   document.getElementById("minuto").innerHTML =
-    `<div><h3>Qué circula <span class="num" style="font-weight:400">(las ${Math.min(3, N.length)} más grandes de ${N.length})</span></h3><ul>${top}</ul></div><div><h3>Qué nació en el período</h3><ul>${ems}</ul></div><div><h3>Quién lo empuja</h3><ul>${opl}</ul></div>`;
+    `<div class="glass reveal" style="--i:1"><h3><span class="dot d-a" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg></span>Qué circula <span class="num" style="font-weight:400;text-transform:none;letter-spacing:0">(las ${Math.min(3, N.length)} más grandes de ${N.length})</span></h3><ul>${top}</ul></div>`
+  + `<div class="glass reveal" style="--i:2"><h3><span class="dot d-n" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>Qué nació en el período</h3><ul>${ems}</ul></div>`
+  + `<div class="glass reveal" style="--i:3"><h3><span class="dot d-o" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="17" r="2.5"/></svg></span>Quién lo empuja</h3><ul>${opl}</ul></div>`;
 }
-document.getElementById("facts").innerHTML = facts.map(([v, l]) => `<div class="fact"><b>${esc(v)}</b><span class="eyebrow">${esc(l)}</span></div>`).join("");
+const IC = {
+  "comentarios": '<path d="M4 5h16v11H9l-5 4z"/>',
+  "narrativas": '<path d="M4 6h16M4 12h10M4 18h13"/>',
+  "operaciones": '<circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="17" r="2.5"/>',
+  "cuentas coordinadas": '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.2-3.6 4-5.5 7-5.5s5.8 1.9 7 5.5"/>',
+  "fuera de tema o ruido": '<path d="M3 12h3l2-5 4 10 2-5h7"/>',
+  "gasto en IA": '<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.6-.8-1.5-1.2-2.5-1.2-1.4 0-2.5.8-2.5 2s1.1 1.6 2.5 2 2.5.8 2.5 2-1.1 2-2.5 2c-1 0-1.9-.4-2.5-1.2M12 6.5V8M12 16v1.5"/>',
+};
+document.getElementById("facts").innerHTML = facts.map(([v, l], i) => `<div class="fact glass reveal" style="--i:${i + 1}"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[l] || ""}</svg></span><b>${esc(v)}</b><span class="eyebrow">${esc(l)}</span></div>`).join("");
 
 // escala compartida
 let ymax = 1;
@@ -222,8 +300,8 @@ N.forEach((n, i) => {
       <div class="title">${esc(n.titulo)}</div>
       <div class="sub"><span class="num">${fmt.format(n.total)}</span><span class="split" aria-hidden="true"><i class="a" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i></span><span class="num">${pa}% la afirma, ${100 - pa}% la refuta</span><span>${n.emergente ? `nace ${dd(n.origen)} ${hh(n.origen)}` : "ya circulaba al empezar"}</span></div>
       ${chips.length ? `<div class="sub">${chips.join("")}</div>` : ""}
-      ${n.ej_apoya ? `<div class="ej"><b class="ea">Afirma:</b> “${esc(n.ej_apoya)}”</div>` : ""}
-      ${n.ej_rechaza ? `<div class="ej"><b class="er">Refuta:</b> “${esc(n.ej_rechaza)}”</div>` : ""}
+      ${n.ej_apoya ? `<div class="ej a"><b class="ea">Afirma:</b> “${esc(n.ej_apoya)}”</div>` : ""}
+      ${n.ej_rechaza ? `<div class="ej r"><b class="er">Refuta:</b> “${esc(n.ej_rechaza)}”</div>` : ""}
       <div class="keys">${n.claves.map(esc).join(" · ")}</div>
     </div>
     <div class="chart" data-i="${i}" tabindex="0" role="img" aria-label="${esc(n.titulo)}: ${fmt.format(n.apoya)} apoyan, ${fmt.format(n.rechaza)} rechazan, nace el ${dd(n.origen)}">
@@ -278,8 +356,8 @@ ops.innerHTML = O.length ? O.map(o => {
   const hmax = Math.max(1, ...o.horas);
   const bars = o.horas.map((v, h) => `<i class="${v ? "" : "z"}" data-h="${h}" data-v="${v}" style="height:${Math.max(2, v / hmax * 100)}%"></i>`).join("");
   const peak = o.horas.indexOf(hmax);
-  return `<article class="opcard">
-    <div class="ophead"><span class="opname">${esc(opNombre(o.grupo))}</span><span class="eyebrow num">${o.cuentas} cuentas · ${fmt.format(o.comentarios)} comentarios</span></div>
+  return `<article class="opcard glass reveal" style="--i:${5 + O.indexOf(o)}">
+    <div class="ophead"><span class="opname"><span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="17" r="2.5"/><path d="M8.5 8h7M8 10l3 5M16 10l-3 5"/></svg></span>${esc(opNombre(o.grupo))}</span><span class="eyebrow num">${o.cuentas} cuentas · ${fmt.format(o.comentarios)} comentarios</span></div>
     <div class="opfoco">${o.foco_titulo ? `Empuja <em>“${esc(o.foco_titulo)}”</em>, con el ${Math.round(o.foco_pct * 100)}% de lo que publica (sin contar respuestas).` : "Sin foco en una narrativa."}</div>
     <div class="hours"><span class="eyebrow">A qué hora publican · pico ${String(peak).padStart(2, "0")} h</span>
       <div class="bars" data-op="${esc(o.grupo)}">${bars}</div>
