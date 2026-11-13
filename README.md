@@ -99,6 +99,8 @@ No se usan la fecha de creación de las cuentas ni los hashtags. En el set de pr
 
 Para no ajustarnos al set de práctica, cada cambio pasa por un **banco de estrés** (`tests/banco_estres.py`): corre el pipeline sin IA sobre 12 recortes del set (por días, por tema y por fracción de publicaciones), con su verdad recalculada, y los puntúa con el scorer oficial. Un cambio se acepta solo si no baja el puntaje de práctica ni sube los falsos positivos en ningún recorte.
 
+**Test nulo de coordinación** (`tests/test_nulo.py`, sin etiquetas): barajamos las fechas, o los autores, dentro de cada publicación. Eso conserva el volumen, el ritmo, los textos y las respuestas, pero rompe la sincronía entre cuentas. Si el detector marcara a alguien en esos datos, estaría viendo coordinación donde no la hay. En práctica, los datos reales marcan 101 cuentas, todas de campañas; las 6 versiones barajadas marcan 0. Es el modelo nulo por permutación que proponen Pacheco et al. (2021).
+
 | Recorte (sin IA) | Puntaje | Cuentas marcadas por error |
 |---|---|---|
 | Práctica completa | 52,56 | 0 |
