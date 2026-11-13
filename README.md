@@ -125,17 +125,19 @@ Para no ajustarnos al set de práctica, cada cambio pasa por un **banco de estr�
 
 Los puntajes bajan cuando el recorte deja a una campaña con muy pocos comentarios: el detector prefiere no acusar antes que acusar mal. En total hay **2 falsos positivos en 14 corridas** (antes de agregar el filtro de densidad eran 3.641).
 
-Además lo corrimos sobre variantes del set con cambios de forma y de contenido (todas sin IA, precisión 1,0 en todas):
+Además lo corrimos sobre variantes del set con cambios de forma y de contenido (`tests/variantes.py`, todas sin IA, precisión 1,0 en todas: ninguna cuenta genuina marcada):
 
-| Variante | Puntaje |
-|---|---|
-| Fechas corridas 150 días y en UTC (`Z`) | 52,56 |
-| Ids nuevos no secuenciales y filas mezcladas | 52,59 |
-| CSV sucio: textos vacíos, filas duplicadas, respuestas a ids inexistentes, fechas ilegibles, cuentas faltantes, columnas extra, CRLF | 52,33 |
-| Mitad de las respuestas / 35% / 20% | 51,80 / 49,43 / 46,90 |
-| Unos 150.000 comentarios en 28 días con otra mezcla de temas | 40,03 |
-| Sin ninguna respuesta | 32,55 (no se cae) |
-| Fechas `dd/mm/aaaa` | corta con un mensaje claro que pide fechas ISO 8601 |
+| Variante | Puntaje | Cuentas de campaña encontradas | Narrativas (encontradas / reales) |
+|---|---|---|---|
+| Fechas corridas 150 días y en UTC (`Z`) | 54,14 | 115 / 115 | 13 / 13 |
+| Ids nuevos no secuenciales y filas mezcladas | 54,12 | 115 / 115 | 13 / 13 |
+| CSV sucio: textos vacíos, filas duplicadas, respuestas a ids inexistentes, fechas ilegibles, cuentas faltantes, columnas extra, CRLF | 53,42 | 115 / 115 | 13 / 13 |
+| Mitad de las respuestas / 35% / 20% | 53,57 / 53,38 / 51,02 | 113 / 114 / 111 de 115 | 14 / 14 / 17 de 13 |
+| Unos 150.000 comentarios en 28 días con otra mezcla de temas (menos litio, tiempo estirado al doble) | 47,53 | 74 / 113 | 13 / 13 |
+| Sin ninguna respuesta | 32,84 (no se cae) | 106 / 115 | 135 / 13 |
+| Fechas `dd/mm/aaaa` | corta con un mensaje claro que pide fechas ISO 8601 | — | — |
+
+Sin respuestas no hay con qué coser los clusters en narrativas, así que salen muchas y chicas, aunque la coordinación sigue funcionando. Con el tiempo estirado al doble, las ráfagas de 12 minutos pasan a 24 y parte de las coincidencias cae fuera de la ventana de 10 minutos.
 
 La ingesta también acepta `.csv` sin comprimir, columnas faltantes (avisa), texto en latin-1 (lo detecta y lo relee) y comillas mal cerradas sin perder filas, y compara cuántas filas leyó contra el archivo. Si una etapa falla, la otra se entrega igual: los cuatro archivos siempre se escriben, y el proceso termina con código 2 y un aviso visible.
 
