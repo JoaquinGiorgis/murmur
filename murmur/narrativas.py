@@ -63,6 +63,15 @@ OP_LADO_HILO = True   # True: el lado que una operación empuja en una narrativa
                       # coordinadas a sus comentarios (una respuesta larga va del lado opuesto): si una mayoría estricta
                       # (al menos ARISTA_MIN votos) señala un lado, todos los comentarios raíz de la operación en su narrativa
                       # principal van ahí. SIM_COORD elige lado por parecido y una consigna comparte palabras con su refutación
+RUIDO_VARIANTES = True # True: un texto es ruido si es una variante con letras traspuestas ("Alguein" por "Alguien") de un texto
+                      # que ya es ruido por repetido, y ninguna de esas variantes entra en una conversación. No cambia el conteo
+                      # de repeticiones: solo extiende la marca del aviso original a sus errores de tipeo
+RUIDO_REP_TASA = True # True: "repetido y nunca en una conversación" pide la misma evidencia que en práctica. Que un texto
+                      # repetido n veces no tenga respuestas sorprende según la tasa de respuestas: (1 - tasa)^n. Con menos
+                      # respuestas se exigen más repeticiones para igualar (1 - REF_TASA_RESP)^RUIDO_REPETIDO; nunca menos
+PARTIR_LADOS = True  # True: si las respuestas largas a los textos de un cluster fino señalan los dos lados (al menos ARISTA_MIN
+                      # textos del lado contrario al del cluster), el cluster mezcla afirmación y refutación: cada texto con
+                      # votos toma su lado y los demás siguen al texto con votos más parecido
 PARTIR_MIXTOS = True  # True: si las respuestas largas a comentarios de un cluster fino votan otra narrativa (al menos
                       # ARISTA_MIN votos), el cluster mezcla dos temas: cada comentario con votos toma la narrativa que le
                       # votan y los demás siguen al compañero de cluster con votos que más se les parece
@@ -141,18 +150,18 @@ def clusters_finos(E, nw_por_kid, seed=42, log=print):
 
 def narrativas(c, E, kid, grupos=None, log=print, llm=None):
     """Punto de entrada. Con ANCLA_POSTURA y alguna opción de asignación prendida corre dos pasadas (UMAP una sola vez)."""
-    global RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS
-    opciones = (RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS)
+    global RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS, PARTIR_LADOS
+    opciones = (RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS, PARTIR_LADOS)
     if not (ANCLA_POSTURA and any(opciones)):
         return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm)
     nw = c.texto.fillna("").str.split().str.len().values
     nw_kid = np.zeros(len(E)); np.maximum.at(nw_kid, kid, nw)
     lab_kid = clusters_finos(E, nw_kid, log=log)
     try:
-        RESTO_VECINO = PARTIR_MIXTOS = FRAG_VECINO = HILO_RESCATE = FRAG_RESPUESTAS = False
+        RESTO_VECINO = PARTIR_MIXTOS = FRAG_VECINO = HILO_RESCATE = FRAG_RESPUESTAS = PARTIR_LADOS = False
         df0, _, _ = _narrativas(c, E, kid, grupos=grupos, log=lambda s: None, llm=None, _lab=lab_kid)
     finally:
-        RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS = opciones
+        RESTO_VECINO, PARTIR_MIXTOS, FRAG_VECINO, HILO_RESCATE, FRAG_RESPUESTAS, PARTIR_LADOS = opciones
     ancla = np.where(df0.postura.values == "apoya", 1, np.where(df0.postura.values == "rechaza", -1, 0))
     return _narrativas(c, E, kid, grupos=grupos, log=log, llm=llm, _lab=lab_kid, _ancla=ancla)
 
@@ -251,6 +260,25 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
                     cn[i], cs[i] = nv, sv; n_mov += 1
             n_part += 1
         log(f"  clusters mixtos partidos: {n_part} ({n_mov} comentarios cambian de narrativa)")
+    if PARTIR_LADOS:
+        vl = defaultdict(list)   # (cluster, texto) -> lado que cada respuesta larga de la misma narrativa le señala
+        for i in np.nonzero(isrep & ~corto & (F >= 0))[0]:
+            p_ = pi[i]
+            if raiz[p_] and cn[p_] >= 0 and cn[p_] == narr[F[p_]] and narr[F[i]] == cn[p_] and lado[F[i]] != 0:
+                vl[(F[p_], kid[p_])].append(-lado[F[i]])
+        por_f = defaultdict(dict)
+        for (f_, k_), vs in vl.items():
+            if sum(vs) != 0:   # mayoría estricta de las respuestas a ese texto
+                por_f[f_][k_] = 1 if sum(vs) > 0 else -1
+        n_l = n_m = 0
+        for f_, kv in por_f.items():
+            if sum(1 for v in kv.values() if v != lado[f_]) < ARISTA_MIN:
+                continue
+            mem = np.nonzero(raiz & (F == f_) & (cn == narr[f_]))[0]
+            ks = np.array(list(kv)); sv = np.array([kv[k] for k in ks])
+            nuevo = sv[(E[kid[mem]] @ E[ks].T).argmax(1)]
+            n_m += int((nuevo != cs[mem]).sum()); cs[mem] = nuevo; n_l += 1
+        log(f"  clusters con los dos lados partidos: {n_l} ({n_m} comentarios cambian de lado)")
     cent = np.zeros((nfc, E.shape[1]), np.float32)
     np.add.at(cent, F[F >= 0], E[kid[F >= 0]])
     cent /= np.linalg.norm(cent, axis=1, keepdims=True) + 1e-9
@@ -284,7 +312,14 @@ def _narrativas(c, E, kid, grupos=None, log=print, llm=None, _lab=None, _ancla=N
     en_resp = set(k2[isrep]) | set(k2[pi[isrep]])
     cnt = pd.Series(k2).value_counts()
     umbral_rep = RUIDO_REPETIDO * max(1.0, N / REF_COMENTARIOS) if RUIDO_REP_ESCALA else RUIDO_REPETIDO
+    if RUIDO_REP_TASA and 0 < tasa < REF_TASA_RESP:
+        umbral_rep = round(umbral_rep * np.log(1 - REF_TASA_RESP) / np.log(1 - tasa))
     ruidosos = set(cnt[cnt >= umbral_rep].index) - en_resp
+    if RUIDO_VARIANTES and ruidosos and not RUIDO_LETRAS:
+        k3v = c.texto.map(_k3).values
+        r3 = set(k3v[np.isin(k2, list(ruidosos))])
+        en3 = set(k3v[isrep]) | set(k3v[pi[isrep]])
+        ruidosos |= set(k2[np.isin(k3v, list(r3 - en3))]) - en_resp
     nk = np.isin(k2, list(ruidosos)) & ~isrep
     cn[nk] = -1
 
