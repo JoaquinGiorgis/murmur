@@ -35,6 +35,7 @@ SIM_ASIGNAR = 0.80
 SIM_COORD = 0.55
 FRAG_FRAC, SIM_FRAG = 0.003, 0.5   # fragmento = narrativa de < 0,3%: la real más chica en práctica y recortes pesa 0,82%; con 1% se fundían emergentes nuevas (H3, B4) en otras viejas
 IA_PARALELO = 4   # llamadas a la IA simultáneas (los 429 se reintentan con espera)
+UMAP_COMPAT = None   # None = pipeline 0.5 de umap-learn (spectral, 1 hilo con semilla); False = init recursiva + Adam en paralelo
 N_EJ, N_VOTOS = 16, 8   # 8 votos: con 4, una narrativa dudosa (la IA erra 1 de cada 4) salía mal ~1 de cada 20 corridas
 RUIDO_REPETIDO = 20
 RUIDO_REP_ESCALA = True       # el umbral de repeticiones crece con el volumen (nunca baja de 20): calibrado para ~200k
@@ -93,7 +94,7 @@ def clusters_finos(E, nw_por_kid, seed=42, log=print):
     import umap, hdbscan
     cand = np.nonzero(nw_por_kid >= MIN_PALABRAS)[0]
     X = umap.UMAP(n_components=8, n_neighbors=30, min_dist=0.0, metric="cosine",
-                  random_state=seed, low_memory=True).fit_transform(E[cand])
+                  random_state=seed, low_memory=True, compatibility_layout=UMAP_COMPAT).fit_transform(E[cand])
     cl = hdbscan.HDBSCAN(min_cluster_size=HDB_MCS, min_samples=HDB_MS).fit(X)
     lab = np.full(len(E), -1)
     lab[cand] = cl.labels_
